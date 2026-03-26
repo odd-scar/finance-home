@@ -24,7 +24,10 @@ export function Input({ className = '', error, ...props }: InputProps) {
   return (
     <input
       {...props}
-      className={`w-full bg-gray-800 border ${error ? 'border-rose-500' : 'border-gray-700'} rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm ${className}`}
+      // text-base = 1rem = 16px — iOS Safari auto-zooms the viewport for
+      // any focused input with font-size < 16px, causing the jarring "blur"
+      // effect on iPhone. Keep this at text-base or larger.
+      className={`w-full bg-gray-800 border ${error ? 'border-rose-500' : 'border-gray-700'} rounded-lg px-3 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-base ${className}`}
     />
   )
 }
@@ -35,7 +38,8 @@ export function Select({ className = '', children, ...props }: SelectProps) {
   return (
     <select
       {...props}
-      className={`w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm ${className}`}
+      // text-base (16px) prevents iOS Safari auto-zoom on focus
+      className={`w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-base ${className}`}
     >
       {children}
     </select>

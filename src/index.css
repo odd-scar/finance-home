@@ -14,6 +14,7 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
+
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
@@ -35,6 +36,19 @@
 @layer utilities {
   .bg-gray-750 {
     background-color: #2d3748;
+  }
+
+  /*
+   * iOS Safari zooms the viewport when a focused input has font-size < 16px.
+   * This safety-net rule uses @layer utilities priority (beats Tailwind's
+   * text-sm) so any <input>/<select>/<textarea> without an explicit text-*
+   * class still gets 16px minimum.  Components that already use text-base or
+   * larger are unaffected because max() keeps the larger value.
+   */
+  input:not([class*="text-lg"]):not([class*="text-xl"]):not([class*="text-2xl"]),
+  select:not([class*="text-lg"]):not([class*="text-xl"]):not([class*="text-2xl"]),
+  textarea:not([class*="text-lg"]):not([class*="text-xl"]):not([class*="text-2xl"]) {
+    font-size: 1rem; /* 16px — prevents iOS Safari auto-zoom */
   }
 }
 

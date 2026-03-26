@@ -125,7 +125,7 @@ export function AuthScreen() {
                 value={email}
                 onChange={e => { setEmail(e.target.value); clear() }}
                 autoFocus
-                className="w-full bg-gray-800 border border-gray-700 focus:border-brand-500 rounded-xl pl-10 pr-4 py-3 text-white placeholder-gray-500 focus:outline-none transition-colors text-sm"
+                className="w-full bg-gray-800 border border-gray-700 focus:border-brand-500 rounded-xl pl-10 pr-4 py-3 text-white placeholder-gray-500 focus:outline-none transition-colors text-base"
               />
             </div>
 
@@ -138,7 +138,7 @@ export function AuthScreen() {
                   placeholder="Password"
                   value={password}
                   onChange={e => { setPassword(e.target.value); clear() }}
-                  className="w-full bg-gray-800 border border-gray-700 focus:border-brand-500 rounded-xl pl-10 pr-10 py-3 text-white placeholder-gray-500 focus:outline-none transition-colors text-sm"
+                  className="w-full bg-gray-800 border border-gray-700 focus:border-brand-500 rounded-xl pl-10 pr-10 py-3 text-white placeholder-gray-500 focus:outline-none transition-colors text-base"
                 />
                 <button
                   type="button"
@@ -159,7 +159,7 @@ export function AuthScreen() {
                   placeholder="Confirm password"
                   value={confirmPassword}
                   onChange={e => { setConfirmPassword(e.target.value); clear() }}
-                  className="w-full bg-gray-800 border border-gray-700 focus:border-brand-500 rounded-xl pl-10 pr-4 py-3 text-white placeholder-gray-500 focus:outline-none transition-colors text-sm"
+                  className="w-full bg-gray-800 border border-gray-700 focus:border-brand-500 rounded-xl pl-10 pr-4 py-3 text-white placeholder-gray-500 focus:outline-none transition-colors text-base"
                 />
               </div>
             )}
@@ -284,7 +284,7 @@ export function UpdatePasswordScreen({ onDone }: UpdatePasswordScreenProps) {
                   value={password}
                   onChange={e => { setPassword(e.target.value); setError('') }}
                   autoFocus
-                  className="w-full bg-gray-800 border border-gray-700 focus:border-brand-500 rounded-xl pl-10 pr-10 py-3 text-white placeholder-gray-500 focus:outline-none transition-colors text-sm"
+                  className="w-full bg-gray-800 border border-gray-700 focus:border-brand-500 rounded-xl pl-10 pr-10 py-3 text-white placeholder-gray-500 focus:outline-none transition-colors text-base"
                 />
                 <button type="button" onClick={() => setShowPassword(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">
                   {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -298,7 +298,7 @@ export function UpdatePasswordScreen({ onDone }: UpdatePasswordScreenProps) {
                   value={confirm}
                   onChange={e => { setConfirm(e.target.value); setError('') }}
                   onKeyDown={e => e.key === 'Enter' && handleUpdate()}
-                  className="w-full bg-gray-800 border border-gray-700 focus:border-brand-500 rounded-xl pl-10 pr-4 py-3 text-white placeholder-gray-500 focus:outline-none transition-colors text-sm"
+                  className="w-full bg-gray-800 border border-gray-700 focus:border-brand-500 rounded-xl pl-10 pr-4 py-3 text-white placeholder-gray-500 focus:outline-none transition-colors text-base"
                 />
               </div>
               {error && (
