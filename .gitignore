@@ -1,0 +1,19 @@
+# Build output
+dist/
+dist.zip
+
+# Dependencies
+node_modules/
+
+# Environment variables (keep secrets out of git)
+.env
+.env.local
+.env.*.local
+
+# Vercel
+.vercel
+
+# Editor / OS
+.DS_Store
+.claude/
+*.log
