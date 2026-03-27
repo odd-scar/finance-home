@@ -106,15 +106,8 @@ const content: Record<Tab, React.ReactNode> = {
     { label: 'Add Goal', icon: <Target size={14} />, tab: 'goals' as Tab },
   ]
 
-  // ── DEV BYPASS — remove before deploying ─────────────────────────────
-  const _devBypass = import.meta.env.DEV
-  const _effectiveUser = user ?? (_devBypass ? { id: 'dev', email: 'dev@test.local' } as User : null)
-  const _effectiveAuthLoading = _devBypass ? false : authLoading
-  const _effectiveDataLoading = _devBypass ? false : dataLoading
-  // ─────────────────────────────────────────────────────────────────────
-
   // ── Auth gates ──────────────────────────────────────────────────────
-  if (_effectiveAuthLoading) return (
+  if (authLoading) return (
     <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center gap-4">
       <div className="w-14 h-14 bg-brand-600 rounded-2xl flex items-center justify-center shadow-lg shadow-brand-600/30">
         <DollarSign size={28} className="text-white" />
@@ -127,9 +120,9 @@ const content: Record<Tab, React.ReactNode> = {
     <UpdatePasswordScreen onDone={() => setPasswordRecovery(false)} />
   )
 
-  if (!_effectiveUser) return <AuthScreen />
+  if (!user) return <AuthScreen />
 
-  if (_effectiveDataLoading) return (
+  if (dataLoading) return (
     <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center gap-3">
       <div className="w-14 h-14 bg-brand-600 rounded-2xl flex items-center justify-center shadow-lg shadow-brand-600/30">
         <DollarSign size={28} className="text-white" />
@@ -143,7 +136,7 @@ const content: Record<Tab, React.ReactNode> = {
     <div className="flex min-h-screen bg-gray-950 text-white font-sans">
       <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
       <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
-        <Header activeTab={activeTab} userEmail={_effectiveUser.email} onSignOut={handleSignOut} />
+        <Header activeTab={activeTab} userEmail={user.email} onSignOut={handleSignOut} />
         <main className="flex-1 overflow-y-auto pb-16 lg:pb-0" style={{ paddingBottom: 'calc(52px + env(safe-area-inset-bottom))' }}>
           {content[activeTab]}
         </main>
