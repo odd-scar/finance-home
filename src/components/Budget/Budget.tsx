@@ -9,7 +9,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   CartesianGrid, PieChart, Pie, Cell, Legend,
 } from 'recharts'
-import { Plus, Trash2, Edit2, TrendingUp, TrendingDown, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, Trash2, Edit2, TrendingUp, TrendingDown, ChevronLeft, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react'
 import { v4 as uuid } from 'uuid'
 import { BudgetEntry } from '../../types'
 
@@ -42,6 +42,7 @@ export function Budget() {
   const [editEntry, setEditEntry] = useState<BudgetEntry | null>(null)
   const [form, setForm] = useState({ ...emptyForm })
   const [filterType, setFilterType] = useState<'all' | 'income' | 'expense'>('all')
+  const [showAllCategories, setShowAllCategories] = useState(false)
 
   const navMonth = (dir: number) => {
     let m = viewMonth + dir, y = viewYear
@@ -101,8 +102,10 @@ export function Budget() {
   }
 
   const openEdit = (e: BudgetEntry) => {
+    const validCats = e.type === 'income' ? INCOME_CATS : EXPENSE_CATS
+    const category = validCats.includes(e.category) ? e.category : validCats[0]
+    setForm({ category, description: e.description, amount: String(e.amount), type: e.type })
     setEditEntry(e)
-    setForm({ category: e.category, description: e.description, amount: String(e.amount), type: e.type })
   }
 
   const cats = form.type === 'income' ? INCOME_CATS : EXPENSE_CATS
@@ -112,10 +115,12 @@ export function Budget() {
     <div className="space-y-4">
       <div className="flex rounded-xl overflow-hidden border border-gray-700">
         <button
+          type="button"
           onClick={() => setForm(f => ({ ...f, type: 'income', category: 'Salary' }))}
           className={`flex-1 py-2 text-sm font-medium transition-colors ${form.type === 'income' ? 'bg-emerald-500/20 text-emerald-400' : 'text-gray-400 hover:text-white'}`}
         >Income</button>
         <button
+          type="button"
           onClick={() => setForm(f => ({ ...f, type: 'expense', category: 'Groceries' }))}
           className={`flex-1 py-2 text-sm font-medium transition-colors ${form.type === 'expense' ? 'bg-rose-500/20 text-rose-400' : 'text-gray-400 hover:text-white'}`}
         >Expense</button>
@@ -131,10 +136,6 @@ export function Budget() {
       <FormField label="Amount ($)">
         <Input type="number" placeholder="0.00" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} />
       </FormField>
-      <div className="flex gap-3 pt-2">
-        <Button variant="secondary" onClick={() => { setAddOpen(false); setEditEntry(null) }} className="flex-1">Cancel</Button>
-        <Button onClick={editEntry ? handleEdit : handleAdd} className="flex-1">{editEntry ? 'Save' : 'Add Entry'}</Button>
-      </div>
     </div>
   )
 
@@ -143,17 +144,17 @@ export function Budget() {
       {/* Month nav */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <button onClick={() => navMonth(-1)} className="p-2 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white">
+          <button type="button" onClick={() => navMonth(-1)} className="p-2 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white">
             <ChevronLeft size={18} />
           </button>
-          <h2 className="text-lg font-bold text-white w-40 text-center">
+          <h2 className="text-base sm:text-lg font-bold text-white w-32 sm:w-44 text-center">
             {new Date(viewYear, viewMonth - 1, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' })}
           </h2>
-          <button onClick={() => navMonth(1)} className="p-2 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white">
+          <button type="button" onClick={() => navMonth(1)} className="p-2 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white">
             <ChevronRight size={18} />
           </button>
         </div>
-        <Button size="sm" onClick={() => setAddOpen(true)}><Plus size={14} /> Add Entry</Button>
+        <Button size="sm" onClick={() => { setForm({ ...emptyForm }); setAddOpen(true) }}><Plus size={14} /> Add Entry</Button>
       </div>
 
       {/* Summary */}
@@ -196,20 +197,42 @@ export function Budget() {
           </ResponsiveContainer>
         </div>
 
-        {expByCategory.length > 0 && (
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
-            <h3 className="font-semibold text-white mb-4">Expense Categories</h3>
-            <ResponsiveContainer width="100%" height={200}>
-              <PieChart>
-                <Pie data={expByCategory} cx="50%" cy="50%" innerRadius={45} outerRadius={70} paddingAngle={2} dataKey="value">
-                  {expByCategory.map((entry, i) => <Cell key={i} fill={entry.color} />)}
-                </Pie>
-                <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v: number) => [formatCurrency(v)]} />
-                <Legend formatter={v => <span className="text-xs text-gray-300">{v}</span>} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        )}
+        {expByCategory.length > 0 && (() => {
+          const TOP_N = 4
+          const sorted = [...expByCategory].sort((a, b) => b.value - a.value)
+          const hasMore = sorted.length > TOP_N
+          const topSlices = sorted.slice(0, TOP_N)
+          const otherValue = sorted.slice(TOP_N).reduce((s, d) => s + d.value, 0)
+          const collapsed = hasMore && !showAllCategories
+            ? [...topSlices, { name: 'Other', value: otherValue, color: '#6b7280' }]
+            : sorted
+
+          return (
+            <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-semibold text-white">Expense Categories</h3>
+                {hasMore && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllCategories(v => !v)}
+                    className="flex items-center gap-1 text-xs text-gray-400 hover:text-white transition-colors cursor-pointer"
+                  >
+                    {showAllCategories ? <><ChevronUp size={13} /> Less</> : <><ChevronDown size={13} /> All {sorted.length}</>}
+                  </button>
+                )}
+              </div>
+              <ResponsiveContainer width="100%" height={200}>
+                <PieChart>
+                  <Pie data={collapsed} cx="50%" cy="50%" innerRadius={50} outerRadius={75} paddingAngle={2} dataKey="value">
+                    {collapsed.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                  </Pie>
+                  <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v: number) => [formatCurrency(v)]} />
+                  <Legend formatter={v => <span className="text-xs text-gray-300">{v}</span>} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          )
+        })()}
       </div>
 
       {/* Entries table */}
@@ -218,14 +241,14 @@ export function Budget() {
           <h3 className="font-semibold text-white flex-1">Transactions</h3>
           <div className="flex rounded-lg overflow-hidden border border-gray-700 text-xs">
             {(['all', 'income', 'expense'] as const).map(t => (
-              <button key={t} onClick={() => setFilterType(t)}
+              <button key={t} type="button" onClick={() => setFilterType(t)}
                 className={`px-3 py-1.5 capitalize transition-colors ${filterType === t ? 'bg-brand-600 text-white' : 'text-gray-400 hover:text-white'}`}>
                 {t}
               </button>
             ))}
           </div>
         </div>
-        <div className="divide-y divide-gray-800 max-h-96 overflow-y-auto">
+        <div className="divide-y divide-gray-800 max-h-64 sm:max-h-96 overflow-y-auto">
           {filtered.map(entry => (
             <div key={entry.id} className="flex items-center gap-3 px-4 py-3 sm:px-5 sm:gap-4">
               <div className={`w-2 h-2 rounded-full shrink-0 ${entry.type === 'income' ? 'bg-emerald-400' : 'bg-rose-400'}`} />
@@ -237,8 +260,20 @@ export function Budget() {
                 {entry.type === 'income' ? '+' : '-'}{formatCurrency(entry.amount)}
               </span>
               <div className="flex gap-1">
-                <button onClick={() => openEdit(entry)} className="p-1.5 text-gray-600 hover:text-white hover:bg-gray-700 rounded-lg"><Edit2 size={13} /></button>
-                <button onClick={() => removeBudgetEntry(entry.id)} className="p-1.5 text-gray-600 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg"><Trash2 size={13} /></button>
+                <button
+                  type="button"
+                  onClick={() => openEdit(entry)}
+                  className="p-2.5 text-gray-500 hover:text-white hover:bg-gray-700 rounded-lg cursor-pointer touch-manipulation"
+                >
+                  <Edit2 size={14} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => removeBudgetEntry(entry.id)}
+                  className="p-2.5 text-gray-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg cursor-pointer touch-manipulation"
+                >
+                  <Trash2 size={14} />
+                </button>
               </div>
             </div>
           ))}
@@ -248,8 +283,18 @@ export function Budget() {
         </div>
       </div>
 
-      <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add Budget Entry">{budgetFormJsx}</Modal>
-      <Modal open={!!editEntry} onClose={() => setEditEntry(null)} title="Edit Entry">{budgetFormJsx}</Modal>
+      <Modal
+        open={addOpen}
+        onClose={() => { setAddOpen(false); setForm({ ...emptyForm }) }}
+        title="Add Budget Entry"
+        footer={<div className="flex gap-3"><Button variant="secondary" onClick={() => { setAddOpen(false); setForm({ ...emptyForm }) }} className="flex-1">Cancel</Button><Button onClick={handleAdd} className="flex-1">Add Entry</Button></div>}
+      >{budgetFormJsx}</Modal>
+      <Modal
+        open={!!editEntry}
+        onClose={() => { setEditEntry(null); setForm({ ...emptyForm }) }}
+        title="Edit Entry"
+        footer={<div className="flex gap-3"><Button variant="secondary" onClick={() => { setEditEntry(null); setForm({ ...emptyForm }) }} className="flex-1">Cancel</Button><Button onClick={handleEdit} className="flex-1">Save</Button></div>}
+      >{budgetFormJsx}</Modal>
     </div>
   )
 }

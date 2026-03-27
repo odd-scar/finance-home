@@ -111,6 +111,7 @@ export function Goals() {
             {PALETTE.map(c => (
               <button
                 key={c}
+                type="button"
                 onClick={() => setForm(f => ({ ...f, color: c }))}
                 className={`w-6 h-6 rounded-full transition-transform ${form.color === c ? 'ring-2 ring-white scale-110' : ''}`}
                 style={{ backgroundColor: c }}
@@ -119,10 +120,6 @@ export function Goals() {
           </div>
         </FormField>
       </div>
-      <div className="flex gap-3 pt-2">
-        <Button variant="secondary" onClick={() => { setAddOpen(false); setEditGoal(null) }} className="flex-1">Cancel</Button>
-        <Button onClick={editGoal ? handleEdit : handleAdd} className="flex-1">{editGoal ? 'Save' : 'Add Goal'}</Button>
-      </div>
     </div>
   )
 
@@ -130,24 +127,20 @@ export function Goals() {
     <div className="p-4 lg:p-6 space-y-4 lg:space-y-6 animate-fade-in">
       <div className="flex items-center justify-between">
         <div className="grid grid-cols-3 gap-3 lg:gap-4 flex-1 mr-3 sm:mr-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-            <p className="text-sm text-gray-400">Total Goals</p>
-            <p className="text-2xl font-bold text-white">{goals.length}</p>
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 sm:p-4">
+            <p className="text-xs sm:text-sm text-gray-400 truncate">Total</p>
+            <p className="text-xl sm:text-2xl font-bold text-white">{goals.length}</p>
           </div>
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-            <p className="text-sm text-gray-400">Completed</p>
-            <p className="text-2xl font-bold text-emerald-400">
-              {completedGoals.length}
-            </p>
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 sm:p-4">
+            <p className="text-xs sm:text-sm text-gray-400 truncate">Done</p>
+            <p className="text-xl sm:text-2xl font-bold text-emerald-400">{completedGoals.length}</p>
           </div>
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-            <p className="text-sm text-gray-400">In Progress</p>
-            <p className="text-2xl font-bold text-brand-400">
-              {activeGoals.length}
-            </p>
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 sm:p-4">
+            <p className="text-xs sm:text-sm text-gray-400 truncate">Active</p>
+            <p className="text-xl sm:text-2xl font-bold text-brand-400">{activeGoals.length}</p>
           </div>
         </div>
-        <Button onClick={() => setAddOpen(true)}><Plus size={14} /> New Goal</Button>
+        <Button onClick={() => { setForm({ ...emptyForm }); setAddOpen(true) }}><Plus size={14} /> New Goal</Button>
       </div>
 
       {/* Active Goals grid */}
@@ -177,10 +170,10 @@ export function Goals() {
                   </div>
                 </div>
                 <div className="flex gap-1">
-                  <button onClick={() => openEdit(goal)} className="p-1.5 text-gray-600 hover:text-white hover:bg-gray-700 rounded-lg">
+                  <button type="button" onClick={() => openEdit(goal)} className="p-1.5 text-gray-600 hover:text-white hover:bg-gray-700 rounded-lg cursor-pointer">
                     <Edit2 size={13} />
                   </button>
-                  <button onClick={() => removeGoal(goal.id)} className="p-1.5 text-gray-600 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg">
+                  <button type="button" onClick={() => removeGoal(goal.id)} className="p-1.5 text-gray-600 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg cursor-pointer">
                     <Trash2 size={13} />
                   </button>
                 </div>
@@ -269,10 +262,10 @@ export function Goals() {
                     </div>
                   </div>
                   <div className="flex gap-1">
-                    <button onClick={() => openEdit(goal)} className="p-1.5 text-gray-600 hover:text-white hover:bg-gray-700 rounded-lg">
+                    <button type="button" onClick={() => openEdit(goal)} className="p-1.5 text-gray-600 hover:text-white hover:bg-gray-700 rounded-lg cursor-pointer">
                       <Edit2 size={13} />
                     </button>
-                    <button onClick={() => removeGoal(goal.id)} className="p-1.5 text-gray-600 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg">
+                    <button type="button" onClick={() => removeGoal(goal.id)} className="p-1.5 text-gray-600 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg cursor-pointer">
                       <Trash2 size={13} />
                     </button>
                   </div>
@@ -303,8 +296,20 @@ export function Goals() {
         </div>
       )}
 
-      <Modal open={addOpen} onClose={() => setAddOpen(false)} title="New Financial Goal" size="lg">{goalFormJsx}</Modal>
-      <Modal open={!!editGoal} onClose={() => setEditGoal(null)} title="Edit Goal" size="lg">{goalFormJsx}</Modal>
+      <Modal
+        open={addOpen}
+        onClose={() => { setAddOpen(false); setForm({ ...emptyForm }) }}
+        title="New Financial Goal"
+        size="lg"
+        footer={<div className="flex gap-3"><Button variant="secondary" onClick={() => { setAddOpen(false); setForm({ ...emptyForm }) }} className="flex-1">Cancel</Button><Button onClick={handleAdd} className="flex-1">Add Goal</Button></div>}
+      >{goalFormJsx}</Modal>
+      <Modal
+        open={!!editGoal}
+        onClose={() => { setEditGoal(null); setForm({ ...emptyForm }) }}
+        title="Edit Goal"
+        size="lg"
+        footer={<div className="flex gap-3"><Button variant="secondary" onClick={() => { setEditGoal(null); setForm({ ...emptyForm }) }} className="flex-1">Cancel</Button><Button onClick={handleEdit} className="flex-1">Save</Button></div>}
+      >{goalFormJsx}</Modal>
     </div>
   )
 }

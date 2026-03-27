@@ -209,18 +209,6 @@ export function Bills() {
           onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
         />
       </FormField>
-      <div className="flex gap-3 pt-2">
-        <Button
-          variant="secondary"
-          onClick={() => { setAddOpen(false); setEditBill(null) }}
-          className="flex-1"
-        >
-          Cancel
-        </Button>
-        <Button onClick={editBill ? handleEdit : handleAdd} className="flex-1">
-          {editBill ? 'Save Changes' : 'Add Bill'}
-        </Button>
-      </div>
     </div>
   )
 
@@ -238,7 +226,7 @@ export function Bills() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
           <p className="text-xs text-gray-400 mb-1">Monthly Total</p>
-          <p className="text-2xl font-bold text-white">${totalMonthly.toFixed(0)}</p>
+          <p className="text-2xl font-bold text-white">${Math.round(totalMonthly).toLocaleString()}</p>
         </div>
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
           <p className="text-xs text-gray-400 mb-1">Annual Total</p>
@@ -291,7 +279,7 @@ export function Bills() {
                   {/* Name + details */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <p className="font-medium text-white">{bill.name}</p>
+                      <p className="font-medium text-white truncate">{bill.name}</p>
                       <span className={`hidden sm:inline text-xs px-2 py-0.5 rounded-full font-medium ${catColors[bill.category]}`}>
                         {catLabels[bill.category]}
                       </span>
@@ -320,7 +308,7 @@ export function Bills() {
                     {/* Amount shown below name on mobile */}
                     <div className="mt-1 sm:hidden flex items-center justify-between">
                       <p className="font-semibold text-white">${bill.amount.toLocaleString()}</p>
-                      <div className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${urgentClass}`}>
+                      <div className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap shrink-0 ${urgentClass}`}>
                         <DueIcon size={10} />
                         {days === 0 ? 'Due today' : days === 1 ? '1 day' : `${days}d`}
                       </div>
@@ -351,14 +339,16 @@ export function Bills() {
                       <CalendarPlus size={14} />
                     </a>
                     <button
+                      type="button"
                       onClick={() => openEdit(bill)}
-                      className="p-1.5 rounded-lg hover:bg-gray-700 text-gray-600 hover:text-white transition-colors"
+                      className="p-1.5 rounded-lg hover:bg-gray-700 text-gray-600 hover:text-white transition-colors cursor-pointer"
                     >
                       <Edit2 size={14} />
                     </button>
                     <button
+                      type="button"
                       onClick={() => removeBill(bill.id)}
-                      className="p-1.5 rounded-lg hover:bg-rose-500/20 text-gray-600 hover:text-rose-400 transition-colors"
+                      className="p-1.5 rounded-lg hover:bg-rose-500/20 text-gray-600 hover:text-rose-400 transition-colors cursor-pointer"
                     >
                       <Trash2 size={14} />
                     </button>
@@ -370,15 +360,20 @@ export function Bills() {
         )}
       </div>
 
-      {/* Add Modal */}
-      <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add Bill" size="lg">
-        {billFormJsx}
-      </Modal>
-
-      {/* Edit Modal */}
-      <Modal open={!!editBill} onClose={() => setEditBill(null)} title="Edit Bill" size="lg">
-        {billFormJsx}
-      </Modal>
+      <Modal
+        open={addOpen}
+        onClose={() => { setAddOpen(false); setForm({ ...emptyForm }) }}
+        title="Add Bill"
+        size="lg"
+        footer={<div className="flex gap-3"><Button variant="secondary" onClick={() => { setAddOpen(false); setForm({ ...emptyForm }) }} className="flex-1">Cancel</Button><Button onClick={handleAdd} className="flex-1">Add Bill</Button></div>}
+      >{billFormJsx}</Modal>
+      <Modal
+        open={!!editBill}
+        onClose={() => { setEditBill(null); setForm({ ...emptyForm }) }}
+        title="Edit Bill"
+        size="lg"
+        footer={<div className="flex gap-3"><Button variant="secondary" onClick={() => { setEditBill(null); setForm({ ...emptyForm }) }} className="flex-1">Cancel</Button><Button onClick={handleEdit} className="flex-1">Save Changes</Button></div>}
+      >{billFormJsx}</Modal>
     </div>
   )
 }

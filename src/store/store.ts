@@ -42,6 +42,11 @@ function scheduleSyncToSupabase() {
  */
 export async function loadFromSupabase(userId: string): Promise<void> {
   _supabaseUserId = userId
+
+  // Clear any stale local data from a previous user's session before we load
+  // cloud data — prevents a brief flash of the wrong person's data.
+  try { localStorage.removeItem(STORAGE_KEY) } catch { /* quota */ }
+
   try {
     // Race against a 10 s timeout so a paused/slow Supabase project never
     // leaves the user stuck on the "Loading your data…" screen forever.
@@ -58,17 +63,19 @@ export async function loadFromSupabase(userId: string): Promise<void> {
     const { data, error } = await Promise.race([fetchPromise, timeoutPromise])
 
     if (!error && data?.state) {
-      // Existing user — restore their cloud state
+      // Existing user — restore their cloud state exactly as saved.
+      // Fall back to empty arrays (never demo data) for any missing keys
+      // so old records without a field don't accidentally show demo content.
       const cloud = data.state as Partial<AppState>
       state = {
-        stocks:          cloud.stocks          ?? demoStocks,
-        debts:           cloud.debts           ?? demoDebts,
-        savings:         cloud.savings         ?? demoSavings,
-        goals:           cloud.goals           ?? demoGoals,
-        trips:           cloud.trips           ?? demoTrips,
-        budget:          cloud.budget          ?? demoBudget,
-        bills:           cloud.bills           ?? demoBills,
-        assets:          cloud.assets          ?? demoAssets,
+        stocks:          cloud.stocks          ?? [],
+        debts:           cloud.debts           ?? [],
+        savings:         cloud.savings         ?? [],
+        goals:           cloud.goals           ?? [],
+        trips:           cloud.trips           ?? [],
+        budget:          cloud.budget          ?? [],
+        bills:           cloud.bills           ?? [],
+        assets:          cloud.assets          ?? [],
         netWorthHistory: cloud.netWorthHistory ?? [],
         lastStockUpdate: cloud.lastStockUpdate ?? new Date().toISOString(),
       }
@@ -81,17 +88,28 @@ export async function loadFromSupabase(userId: string): Promise<void> {
       }
       listeners.forEach(fn => fn())
     } else {
-      // New user — push whatever is in local storage up to Supabase
+      // Brand-new user (no cloud record yet) — start with an empty account,
+      // NOT demo data. Push the clean state to Supabase immediately.
+      state = emptyState()
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+      } catch { /* quota */ }
+      listeners.forEach(fn => fn())
       scheduleSyncToSupabase()
     }
   } catch {
-    // Network error — run on local data silently
+    // Network error — run on whatever state is already in memory
   }
 }
 
 export function signOutCleanup() {
   _supabaseUserId = null
-  if (_syncTimer) clearTimeout(_syncTimer)
+  if (_syncTimer) { clearTimeout(_syncTimer); _syncTimer = null }
+  // Wipe local storage so the next user logging in on this device
+  // never briefly sees the previous user's data.
+  try { localStorage.removeItem(STORAGE_KEY) } catch { /* quota */ }
+  state = emptyState()
+  listeners.forEach(fn => fn())
 }
 
 export function setStoreEncryptionKey(pin: string | null) {
@@ -108,6 +126,22 @@ function defaultState(): AppState {
     budget: demoBudget,
     bills: demoBills,
     assets: demoAssets,
+    netWorthHistory: [],
+    lastStockUpdate: new Date().toISOString(),
+  }
+}
+
+/** Blank slate for brand-new users — no demo data. */
+function emptyState(): AppState {
+  return {
+    stocks: [],
+    debts: [],
+    savings: [],
+    goals: [],
+    trips: [],
+    budget: [],
+    bills: [],
+    assets: [],
     netWorthHistory: [],
     lastStockUpdate: new Date().toISOString(),
   }

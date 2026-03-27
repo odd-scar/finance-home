@@ -304,7 +304,7 @@ export const demoBudget: BudgetEntry[] = (() => {
   ]
 
   const expenseItems = [
-    { category: 'Rent', description: 'Monthly rent', amount: 1800 },
+    { category: 'Rent/Mortgage', description: 'Monthly rent', amount: 1800 },
     { category: 'Groceries', description: 'Food & groceries', amount: 420 },
     { category: 'Transport', description: 'Gas & transit', amount: 180 },
     { category: 'Utilities', description: 'Electric, water, internet', amount: 145 },

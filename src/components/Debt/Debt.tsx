@@ -173,10 +173,6 @@ export function DebtTracker() {
           <Input type="number" placeholder="0.00" value={form.minimumPayment} onChange={e => setForm(f => ({ ...f, minimumPayment: e.target.value }))} />
         </FormField>
       </div>
-      <div className="flex gap-3 pt-2">
-        <Button variant="secondary" onClick={() => { setAddOpen(false); setEditDebt(null) }} className="flex-1">Cancel</Button>
-        <Button onClick={editDebt ? handleEdit : handleAdd} className="flex-1">{editDebt ? 'Save Changes' : 'Add Debt'}</Button>
-      </div>
     </div>
   )
 
@@ -202,7 +198,7 @@ export function DebtTracker() {
       <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
           <h3 className="font-semibold text-white">Debts</h3>
-          <Button size="sm" onClick={() => setAddOpen(true)}><Plus size={14} /> Add Debt</Button>
+          <Button size="sm" onClick={() => { setForm({ ...emptyForm }); setAddOpen(true) }}><Plus size={14} /> Add Debt</Button>
         </div>
         <div className="divide-y divide-gray-800">
           {debts.map(debt => {
@@ -234,10 +230,10 @@ export function DebtTracker() {
                   <p className="text-xs text-gray-500">of {formatCurrency(debt.originalBalance)}</p>
                 </div>
                 <div className="flex gap-1 shrink-0">
-                  <button onClick={() => openEdit(debt)} className="p-1.5 text-gray-600 hover:text-white hover:bg-gray-700 rounded-lg">
+                  <button type="button" onClick={() => openEdit(debt)} className="p-1.5 text-gray-600 hover:text-white hover:bg-gray-700 rounded-lg cursor-pointer">
                     <Edit2 size={14} />
                   </button>
-                  <button onClick={() => removeDebt(debt.id)} className="p-1.5 text-gray-600 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg">
+                  <button type="button" onClick={() => removeDebt(debt.id)} className="p-1.5 text-gray-600 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg cursor-pointer">
                     <Trash2 size={14} />
                   </button>
                 </div>
@@ -263,6 +259,7 @@ export function DebtTracker() {
               </FormField>
               <div className="grid grid-cols-2 gap-3">
                 <button
+                  type="button"
                   onClick={() => setStrategy('avalanche')}
                   className={`p-3 rounded-xl text-left transition-all border ${strategy === 'avalanche' ? 'border-brand-500 bg-brand-500/10' : 'border-gray-700 hover:border-gray-600'}`}
                 >
@@ -271,6 +268,7 @@ export function DebtTracker() {
                   <p className="text-xs text-emerald-400 mt-1">{payoffComparison.avalanche.months}mo · saves {formatCurrency(Math.max(0, payoffComparison.snowball.interest - payoffComparison.avalanche.interest), true)} interest</p>
                 </button>
                 <button
+                  type="button"
                   onClick={() => setStrategy('snowball')}
                   className={`p-3 rounded-xl text-left transition-all border ${strategy === 'snowball' ? 'border-brand-500 bg-brand-500/10' : 'border-gray-700 hover:border-gray-600'}`}
                 >
@@ -313,8 +311,18 @@ export function DebtTracker() {
         </div>
       )}
 
-      <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add Debt">{debtFormJsx}</Modal>
-      <Modal open={!!editDebt} onClose={() => setEditDebt(null)} title="Edit Debt">{debtFormJsx}</Modal>
+      <Modal
+        open={addOpen}
+        onClose={() => { setAddOpen(false); setForm({ ...emptyForm }) }}
+        title="Add Debt"
+        footer={<div className="flex gap-3"><Button variant="secondary" onClick={() => { setAddOpen(false); setForm({ ...emptyForm }) }} className="flex-1">Cancel</Button><Button onClick={handleAdd} className="flex-1">Add Debt</Button></div>}
+      >{debtFormJsx}</Modal>
+      <Modal
+        open={!!editDebt}
+        onClose={() => { setEditDebt(null); setForm({ ...emptyForm }) }}
+        title="Edit Debt"
+        footer={<div className="flex gap-3"><Button variant="secondary" onClick={() => { setEditDebt(null); setForm({ ...emptyForm }) }} className="flex-1">Cancel</Button><Button onClick={handleEdit} className="flex-1">Save Changes</Button></div>}
+      >{debtFormJsx}</Modal>
     </div>
   )
 }

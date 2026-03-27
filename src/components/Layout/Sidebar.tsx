@@ -36,10 +36,10 @@ const navItems: NavItem[] = [
 
 // Bottom nav primary tabs (shown directly)
 const bottomNavPrimary: NavItem[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={22} /> },
-  { id: 'stocks', label: 'Stocks', icon: <TrendingUp size={22} /> },
-  { id: 'budget', label: 'Budget', icon: <BarChart3 size={22} /> },
-  { id: 'bills', label: 'Bills', icon: <Receipt size={22} /> },
+  { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
+  { id: 'stocks', label: 'Stocks', icon: <TrendingUp size={20} /> },
+  { id: 'budget', label: 'Budget', icon: <BarChart3 size={20} /> },
+  { id: 'bills', label: 'Bills', icon: <Receipt size={20} /> },
 ]
 
 // Bottom nav secondary tabs (shown in "More" sheet)
@@ -58,7 +58,7 @@ interface SidebarProps {
 
 export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
   return (
-    <aside className="hidden lg:flex w-56 shrink-0 h-screen sticky top-0 flex-col bg-gray-950 border-r border-gray-800/60">
+    <aside className="hidden lg:flex w-56 shrink-0 h-screen sticky top-0 flex-col bg-gray-950 border-r border-gray-800/60 shadow-xl shadow-black/20">
       {/* Logo */}
       <div className="flex items-center gap-3 px-5 py-5 border-b border-gray-800/60">
         <div className="w-8 h-8 bg-brand-600 rounded-xl flex items-center justify-center shadow-md shadow-brand-600/30">
@@ -75,11 +75,12 @@ export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
         {navItems.map(item => (
           <button
             key={item.id}
+            data-tour-id={item.id}
             onClick={() => onTabChange(item.id)}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 ${
               activeTab === item.id
-                ? 'bg-brand-600 text-white shadow-md shadow-brand-600/25'
-                : 'text-gray-500 hover:text-white hover:bg-gray-800/70'
+                ? 'bg-brand-600 text-white shadow-md shadow-brand-600/30'
+                : 'text-gray-400 hover:text-white hover:bg-gray-800/80'
             }`}
           >
             <span className={activeTab === item.id ? 'text-white' : 'text-gray-500 group-hover:text-white'}>
@@ -120,19 +121,19 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
     <>
       {/* Bottom nav bar */}
       <nav className="fixed bottom-0 left-0 right-0 z-50 lg:hidden bg-gray-950/95 backdrop-blur-md border-t border-gray-800/60">
-        <div className="flex items-stretch">
+        <div className="flex items-stretch" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
           {bottomNavPrimary.map(item => {
             const isActive = activeTab === item.id && !moreOpen
             return (
               <button
                 key={item.id}
+                data-tour-id={item.id}
                 onClick={() => { setMoreOpen(false); onTabChange(item.id) }}
-                className={`flex-1 flex flex-col items-center justify-center gap-1 py-2.5 px-1 transition-colors ${
+                className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 px-1 transition-colors ${
                   isActive ? 'text-brand-400' : 'text-gray-600 hover:text-gray-300'
                 }`}
               >
-                {/* Active indicator dot */}
-                {isActive && <span className="absolute mt-[-18px] w-1 h-1 rounded-full bg-brand-400" />}
+                {isActive && <span className="absolute mt-[-16px] w-1 h-1 rounded-full bg-brand-400" />}
                 <span>{item.icon}</span>
                 <span className="text-[10px] font-medium leading-none">{item.label}</span>
               </button>
@@ -142,11 +143,11 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
           {/* More button */}
           <button
             onClick={() => setMoreOpen(o => !o)}
-            className={`flex-1 flex flex-col items-center justify-center gap-1 py-2.5 px-1 transition-colors ${
+            className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 px-1 transition-colors ${
               moreOpen || isMoreActive ? 'text-brand-400' : 'text-gray-600 hover:text-gray-300'
             }`}
           >
-            <span>{moreOpen ? <X size={22} /> : <Menu size={22} />}</span>
+            <span>{moreOpen ? <X size={20} /> : <Menu size={20} />}</span>
             <span className="text-[10px] font-medium leading-none">More</span>
           </button>
         </div>
@@ -162,7 +163,7 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
           />
 
           {/* Sheet */}
-          <div className="animate-slide-up fixed bottom-[57px] left-0 right-0 z-50 lg:hidden bg-gray-900 border-t border-gray-800 rounded-t-2xl shadow-2xl">
+          <div className="animate-slide-up fixed left-0 right-0 z-50 lg:hidden bg-gray-900 border-t border-gray-800 rounded-t-2xl shadow-2xl" style={{ bottom: 'calc(52px + env(safe-area-inset-bottom))' }}>
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
               <p className="text-sm font-semibold text-white">More</p>
               <button

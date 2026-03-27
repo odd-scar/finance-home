@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAppStore } from '../../hooks/useAppStore'
 import { formatCurrency, formatPercent, calcPctChange, linearRegression } from '../../utils/finance'
 import { simulateRefresh, getStockInfo, generatePriceHistory } from '../../utils/mockStockData'
@@ -12,8 +12,9 @@ import { Button, Input, FormField } from '../ui/FormField'
 import { Card } from '../ui/Card'
 import { LineChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis, PieChart, Pie, Cell, Legend } from 'recharts'
 import {
-  Plus, RefreshCw, Trash2, TrendingUp, TrendingDown,
+  Plus, Trash2, TrendingUp, TrendingDown,
   Star, AlertTriangle, CheckCircle, Clock,
+  RefreshCw, Loader2,
 } from 'lucide-react'
 import { v4 as uuid } from 'uuid'
 import { Stock } from '../../types'
@@ -61,6 +62,7 @@ export function Stocks() {
   const { stocks, lastStockUpdate } = useAppStore()
   const [refreshing, setRefreshing] = useState(false)
   const [fetchStatus, setFetchStatus] = useState<FetchStatus | null>(null)
+  const [cooldown, setCooldown] = useState(0)
   const [addOpen, setAddOpen] = useState(false)
   const [selected, setSelected] = useState<Stock | null>(null)
   const [form, setForm] = useState({ symbol: '', shares: '', purchasePrice: '', watchlist: false })
@@ -109,6 +111,46 @@ export function Stocks() {
     }, 600)
   }
 
+  // Cooldown countdown — ticks down 1s at a time
+  useEffect(() => {
+    if (cooldown <= 0) return
+    const timer = setTimeout(() => setCooldown(c => c - 1), 1000)
+    return () => clearTimeout(timer)
+  }, [cooldown])
+
+  // Manual refresh triggered by the button — forces a live price fetch,
+  // falls back to simulated ±fluctuation if the API is unavailable
+  const handleManualRefresh = async () => {
+    if (cooldown > 0 || refreshing) return
+    setCooldown(60)
+    setRefreshing(true)
+    setFetchStatus(null)
+    const symbols = stocks.map(s => s.symbol)
+    try {
+      const { quotes, status } = await fetchQuotes(symbols, true) // force bypass cache
+      setFetchStatus(status)
+      const updates = stocks
+        .filter(s => quotes[s.symbol])
+        .map(s => {
+          const q = quotes[s.symbol]!
+          const newHistory = [...s.priceHistory.slice(1), q.price]
+          return { id: s.id, currentPrice: q.price, priceHistory: newHistory }
+        })
+      if (updates.length > 0) {
+        refreshStockPrices(updates)
+      } else {
+        // No live prices returned — apply simulated fluctuation (±0.5–2%)
+        refreshStockPrices(simulateRefresh(stocks))
+        setFetchStatus({ success: [], cached: [], failed: symbols, rateLimited: false })
+      }
+    } catch {
+      // API unreachable — fall back to simulation
+      refreshStockPrices(simulateRefresh(stocks))
+      setFetchStatus({ success: [], cached: [], failed: symbols, rateLimited: false })
+    }
+    setRefreshing(false)
+  }
+
   const handleAdd = () => {
     if (!form.symbol) return
     const sym = form.symbol.toUpperCase().trim()
@@ -141,18 +183,15 @@ export function Stocks() {
     ? new Date(lastStockUpdate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     : null
 
+  // Auto-fetch prices when the tab opens — fetchQuotes handles the 1hr cache
+  // internally so this won't hit the API on every render, only when stale
+  useEffect(() => {
+    if (stocks.length > 0) handleRefreshReal(false)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   return (
     <div className="p-4 lg:p-6 space-y-4 lg:space-y-6 animate-fade-in">
-
-      {/* Info banner — shows on first visit until first real fetch */}
-      {!fetchStatus && !lastStockUpdate && (
-        <div className="flex items-center gap-3 p-4 bg-brand-600/10 border border-brand-600/30 rounded-xl">
-          <TrendingUp size={18} className="text-brand-400 shrink-0" />
-          <p className="text-sm text-brand-300">
-            Click <span className="font-semibold">Fetch Real Prices</span> to load live quotes — no account or API key needed.
-          </p>
-        </div>
-      )}
 
       {/* Fetch status notification */}
       {fetchStatus && (
@@ -163,7 +202,7 @@ export function Stocks() {
         }`}>
           {fetchStatus.failed.length > 0
             ? <><AlertTriangle size={14} /> {fetchStatus.success.length} updated · {fetchStatus.cached.length} from cache · {fetchStatus.failed.length} failed</>
-            : <><CheckCircle size={14} /> {fetchStatus.success.length} live · {fetchStatus.cached.length} from cache (under 1 hr old)</>
+            : <><CheckCircle size={14} /> Prices up to date · {fetchStatus.cached.length > 0 ? `${fetchStatus.cached.length} from cache` : `${fetchStatus.success.length} live`}</>
           }
         </div>
       )}
@@ -176,30 +215,31 @@ export function Stocks() {
             {totalGain >= 0 ? '+' : ''}{formatCurrency(totalGain)} ({formatPercent(totalGainPct)}) all time
           </p>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {lastUpdateLabel && (
-            <span className="flex items-center gap-1 text-xs text-gray-500">
-              <Clock size={11} /> {lastUpdateLabel}
-            </span>
-          )}
-          <Button variant="secondary" size="sm" onClick={() => handleRefreshReal(false)} disabled={refreshing}>
-            <RefreshCw size={13} className={refreshing ? 'animate-spin' : ''} />
-            {refreshing ? 'Fetching…' : 'Fetch Real Prices'}
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => handleRefreshReal(true)} disabled={refreshing}>
-            Force Refresh
-          </Button>
-          <Button size="sm" onClick={() => setAddOpen(true)}>
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleManualRefresh}
+              disabled={cooldown > 0 || refreshing}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border border-gray-700 bg-gray-900 text-gray-300 hover:text-white hover:border-gray-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+            >
+              {refreshing
+                ? <Loader2 size={13} className="animate-spin text-brand-400" />
+                : <RefreshCw size={13} />
+              }
+              {cooldown > 0 ? `Available in ${cooldown}s` : 'Refresh Prices'}
+            </button>
+            {lastUpdateLabel && (
+              <span className="flex items-center gap-1 text-xs text-gray-500">
+                <Clock size={11} /> {lastUpdateLabel}
+              </span>
+            )}
+          </div>
+          <Button size="sm" onClick={() => { setForm({ symbol: '', shares: '', purchasePrice: '', watchlist: false }); setAddOpen(true) }}>
             <Plus size={13} /> Add Stock
           </Button>
         </div>
       </div>
-
-      {stocks.length > 0 && (
-        <p className="text-xs text-gray-600 -mt-3">
-          Prices cached for 1 hr · {stocks.length} stock{stocks.length !== 1 ? 's' : ''} tracked · click Force Refresh to bypass cache
-        </p>
-      )}
 
       {/* Holdings table */}
       <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
@@ -320,8 +360,8 @@ export function Stocks() {
         <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
           <h3 className="font-semibold text-white mb-4">Portfolio Allocation</h3>
           <div className="flex flex-col lg:flex-row items-center gap-6">
-            <div className="shrink-0">
-              <ResponsiveContainer width={220} height={220}>
+            <div className="shrink-0 w-[220px]">
+              <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
                   <Pie
                     data={pieData}
@@ -357,8 +397,8 @@ export function Stocks() {
                         className="w-3 h-3 rounded-full shrink-0"
                         style={{ backgroundColor: PIE_COLORS[ownedStocks.findIndex(s => s.symbol === item.symbol) % PIE_COLORS.length] }}
                       />
-                      <span className="text-sm font-medium text-white w-14">{item.symbol}</span>
-                      <div className="flex-1 h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                      <span className="text-sm font-medium text-white w-12 sm:w-14 shrink-0">{item.symbol}</span>
+                      <div className="flex-1 min-w-0 h-1.5 bg-gray-800 rounded-full overflow-hidden">
                         <div
                           className="h-1.5 rounded-full"
                           style={{
@@ -367,8 +407,8 @@ export function Stocks() {
                           }}
                         />
                       </div>
-                      <span className="text-xs text-gray-400 w-10 text-right">{item.pct.toFixed(1)}%</span>
-                      <span className="text-xs text-gray-500 w-20 text-right">{formatCurrency(item.value, true)}</span>
+                      <span className="text-xs text-gray-400 w-9 sm:w-10 text-right shrink-0">{item.pct.toFixed(1)}%</span>
+                      <span className="text-xs text-gray-500 w-16 sm:w-20 text-right shrink-0">{formatCurrency(item.value, true)}</span>
                     </div>
                   ))}
               </div>
@@ -424,7 +464,12 @@ export function Stocks() {
 
 
       {/* Add Stock Modal */}
-      <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add Stock">
+      <Modal
+        open={addOpen}
+        onClose={() => { setAddOpen(false); setForm({ symbol: '', shares: '', purchasePrice: '', watchlist: false }) }}
+        title="Add Stock"
+        footer={<div className="flex gap-3"><Button variant="secondary" onClick={() => { setAddOpen(false); setForm({ symbol: '', shares: '', purchasePrice: '', watchlist: false }) }} className="flex-1">Cancel</Button><Button onClick={handleAdd} className="flex-1">Add</Button></div>}
+      >
         <div className="space-y-4">
           <FormField label="Ticker Symbol">
             <Input
@@ -447,10 +492,6 @@ export function Stocks() {
               </FormField>
             </>
           )}
-          <div className="flex gap-3 pt-2">
-            <Button variant="secondary" onClick={() => setAddOpen(false)} className="flex-1">Cancel</Button>
-            <Button onClick={handleAdd} className="flex-1">Add</Button>
-          </div>
         </div>
       </Modal>
 

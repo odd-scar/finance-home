@@ -165,7 +165,7 @@ export function Dashboard() {
       {/* Emergency Fund + Assets row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-4">
         {/* Emergency Fund Ratio */}
-        <div className="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-2xl p-5 transition-colors duration-200">
+        <div className="bg-gray-900 border border-gray-800 hover:border-gray-600 hover:shadow-lg hover:shadow-black/30 rounded-2xl p-5 transition-all duration-200">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-semibold text-white">Emergency Fund</h3>
             <PiggyBank size={16} className="text-gray-500" />
@@ -201,7 +201,7 @@ export function Dashboard() {
         </div>
 
         {/* Physical Assets */}
-        <div className="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-2xl p-5 transition-colors duration-200">
+        <div className="bg-gray-900 border border-gray-800 hover:border-gray-600 hover:shadow-lg hover:shadow-black/30 rounded-2xl p-5 transition-all duration-200">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-semibold text-white">Physical Assets</h3>
             <Package size={16} className="text-gray-500" />
@@ -230,7 +230,7 @@ export function Dashboard() {
       {/* Charts row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-4">
         {/* Savings trend */}
-        <div className="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-2xl p-5 transition-colors duration-200">
+        <div className="bg-gray-900 border border-gray-800 hover:border-gray-600 hover:shadow-lg hover:shadow-black/30 rounded-2xl p-5 transition-all duration-200">
           <h3 className="font-semibold text-white mb-1">Savings Growth</h3>
           {savingsTrend.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-[180px] text-center gap-2">
@@ -266,7 +266,7 @@ export function Dashboard() {
         </div>
 
         {/* Income vs Expenses */}
-        <div className="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-2xl p-5 transition-colors duration-200">
+        <div className="bg-gray-900 border border-gray-800 hover:border-gray-600 hover:shadow-lg hover:shadow-black/30 rounded-2xl p-5 transition-all duration-200">
           <h3 className="font-semibold text-white mb-4">Income vs Expenses</h3>
           <ResponsiveContainer width="100%" height={180}>
             <BarChart data={budgetTrend} barGap={4}>
@@ -282,7 +282,7 @@ export function Dashboard() {
       </div>
 
       {/* Net Worth History Chart */}
-      <div className="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-2xl p-5 transition-colors duration-200">
+      <div className="bg-gray-900 border border-gray-800 hover:border-gray-600 hover:shadow-lg hover:shadow-black/30 rounded-2xl p-5 transition-all duration-200">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold text-white">Net Worth Over Time</h3>
           <button
@@ -322,7 +322,7 @@ export function Dashboard() {
       {/* Goals + This month */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-4">
         {/* Financial Goals */}
-        <div className="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-2xl p-5 transition-colors duration-200">
+        <div className="bg-gray-900 border border-gray-800 hover:border-gray-600 hover:shadow-lg hover:shadow-black/30 rounded-2xl p-5 transition-all duration-200">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold text-white">Top Goals</h3>
             <Target size={16} className="text-gray-500" />
@@ -348,7 +348,7 @@ export function Dashboard() {
         </div>
 
         {/* This month */}
-        <div className="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-2xl p-5 transition-colors duration-200">
+        <div className="bg-gray-900 border border-gray-800 hover:border-gray-600 hover:shadow-lg hover:shadow-black/30 rounded-2xl p-5 transition-all duration-200">
           <h3 className="font-semibold text-white mb-4">This Month</h3>
           <div className="space-y-3">
             <div className="flex items-center justify-between p-3 bg-emerald-500/10 rounded-xl">
@@ -387,14 +387,14 @@ export function Dashboard() {
       </div>
 
       {/* Debt overview */}
-      <div className="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-2xl p-5 transition-colors duration-200">
+      <div className="bg-gray-900 border border-gray-800 hover:border-gray-600 hover:shadow-lg hover:shadow-black/30 rounded-2xl p-5 transition-all duration-200">
         <h3 className="font-semibold text-white mb-4">Debt Snapshot</h3>
         <div className="space-y-3">
           {debts.map(debt => {
             const paidOff = debt.originalBalance > 0 ? 1 - debt.balance / debt.originalBalance : 0
             return (
               <div key={debt.id} className="flex items-center gap-4">
-                <div className="flex-1">
+                <div className="flex-1 min-w-0">
                   <div className="flex justify-between text-sm mb-1">
                     <span className="text-white">{debt.name}</span>
                     <span className="text-gray-400">{formatCurrency(debt.balance)}</span>

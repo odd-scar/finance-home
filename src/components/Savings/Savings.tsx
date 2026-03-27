@@ -119,20 +119,20 @@ function SavingsDetailModal({ account }: { account: SavingsAccount }) {
                 >
                   <div className="flex items-center gap-3 px-3 py-2.5">
                     {/* Month */}
-                    <span className="text-sm font-medium text-white w-24 shrink-0">
+                    <span className="text-sm font-medium text-white w-20 sm:w-24 shrink-0">
                       {formatMonthLabel(entry.month)}
                     </span>
                     {/* Balance */}
-                    <span className="text-sm text-gray-300 w-24 shrink-0">
+                    <span className="text-sm text-gray-300 w-20 sm:w-24 shrink-0">
                       {formatCurrency(entry.balance)}
                     </span>
                     {/* Delta */}
                     {delta !== null ? (
-                      <span className={`text-xs font-medium w-20 shrink-0 ${delta >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      <span className={`text-xs font-medium w-16 sm:w-20 shrink-0 ${delta >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                         {delta >= 0 ? '+' : ''}{formatCurrency(delta)}
                       </span>
                     ) : (
-                      <span className="text-xs text-gray-600 w-20 shrink-0">first entry</span>
+                      <span className="text-xs text-gray-600 w-16 sm:w-20 shrink-0">first entry</span>
                     )}
                     {/* Note preview or placeholder */}
                     {!isEditing && (
@@ -158,12 +158,14 @@ function SavingsDetailModal({ account }: { account: SavingsAccount }) {
                       />
                       <div className="flex gap-2 mt-2">
                         <button
+                          type="button"
                           onClick={() => setEditingNote(null)}
                           className="text-xs text-gray-500 hover:text-white px-3 py-1.5 rounded-lg hover:bg-gray-700 transition-colors"
                         >
                           Cancel
                         </button>
                         <button
+                          type="button"
                           onClick={() => saveNote(entry.month)}
                           className="text-xs bg-brand-600 hover:bg-brand-500 text-white px-4 py-1.5 rounded-lg transition-colors font-medium"
                         >
@@ -253,16 +255,12 @@ export function Savings() {
         <FormField label="Goal Amount ($)" hint="Optional">
           <Input type="number" placeholder="0.00" value={form.goalAmount} onChange={e => setForm(f => ({ ...f, goalAmount: e.target.value }))} />
         </FormField>
-        <FormField label="Monthly Contribution ($)">
+        <FormField label="Monthly Contribution ($)" hint="Keep in sync with Budget → Savings Transfer">
           <Input type="number" placeholder="0.00" value={form.monthlyContribution} onChange={e => setForm(f => ({ ...f, monthlyContribution: e.target.value }))} />
         </FormField>
         <FormField label="Interest Rate (% APY)">
           <Input type="number" placeholder="4.50" value={form.interestRate} onChange={e => setForm(f => ({ ...f, interestRate: e.target.value }))} />
         </FormField>
-      </div>
-      <div className="flex gap-3 pt-2">
-        <Button variant="secondary" onClick={() => { setAddOpen(false); setEditAccount(null) }} className="flex-1">Cancel</Button>
-        <Button onClick={editAccount ? handleEdit : handleAdd} className="flex-1">{editAccount ? 'Save' : 'Add Account'}</Button>
       </div>
     </div>
   )
@@ -290,7 +288,7 @@ export function Savings() {
       <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
           <h3 className="font-semibold text-white">Savings Accounts</h3>
-          <Button size="sm" onClick={() => setAddOpen(true)}><Plus size={14} /> Add Account</Button>
+          <Button size="sm" onClick={() => { setForm({ ...emptyForm }); setAddOpen(true) }}><Plus size={14} /> Add Account</Button>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 sm:p-5">
           {savings.map(account => {
@@ -308,15 +306,15 @@ export function Savings() {
                   <div>
                     <div className="flex items-center gap-2 mb-0.5">
                       <div className="w-3 h-3 rounded-full" style={{ backgroundColor: color }} />
-                      <p className="font-semibold text-white">{account.name}</p>
+                      <p className="font-semibold text-white truncate">{account.name}</p>
                     </div>
                     <p className="text-xs text-gray-500">{catLabels[account.category]} · {account.interestRate}% APY</p>
                   </div>
                   <div className="flex gap-1">
-                    <button onClick={e => { e.stopPropagation(); openEdit(account) }} className="p-1.5 text-gray-600 hover:text-white hover:bg-gray-600 rounded-lg">
+                    <button type="button" onClick={e => { e.stopPropagation(); openEdit(account) }} className="p-1.5 text-gray-600 hover:text-white hover:bg-gray-600 rounded-lg cursor-pointer">
                       <Edit2 size={13} />
                     </button>
-                    <button onClick={e => { e.stopPropagation(); removeSavings(account.id) }} className="p-1.5 text-gray-600 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg">
+                    <button type="button" onClick={e => { e.stopPropagation(); removeSavings(account.id) }} className="p-1.5 text-gray-600 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg cursor-pointer">
                       <Trash2 size={13} />
                     </button>
                   </div>
@@ -334,7 +332,8 @@ export function Savings() {
                 <div className="flex items-center justify-between mt-2">
                   <p className="text-xs text-gray-500">+{formatCurrency(account.monthlyContribution)}/mo</p>
                   {histData.length > 0 && (
-                    <ResponsiveContainer width={80} height={30}>
+                    <div className="w-[80px] shrink-0">
+                    <ResponsiveContainer width="100%" height={30}>
                       <AreaChart data={histData}>
                         <defs>
                           <linearGradient id={`sg-${account.id}`} x1="0" y1="0" x2="0" y2="1">
@@ -345,6 +344,7 @@ export function Savings() {
                         <Area type="monotone" dataKey="balance" stroke={color} strokeWidth={1.5} fill={`url(#sg-${account.id})`} dot={false} />
                       </AreaChart>
                     </ResponsiveContainer>
+                    </div>
                   )}
                 </div>
               </div>
@@ -357,8 +357,18 @@ export function Savings() {
       </div>
 
       {/* Add/Edit modals */}
-      <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add Savings Account">{savingsFormJsx}</Modal>
-      <Modal open={!!editAccount} onClose={() => setEditAccount(null)} title="Edit Account">{savingsFormJsx}</Modal>
+      <Modal
+        open={addOpen}
+        onClose={() => { setAddOpen(false); setForm({ ...emptyForm }) }}
+        title="Add Savings Account"
+        footer={<div className="flex gap-3"><Button variant="secondary" onClick={() => { setAddOpen(false); setForm({ ...emptyForm }) }} className="flex-1">Cancel</Button><Button onClick={handleAdd} className="flex-1">Add Account</Button></div>}
+      >{savingsFormJsx}</Modal>
+      <Modal
+        open={!!editAccount}
+        onClose={() => { setEditAccount(null); setForm({ ...emptyForm }) }}
+        title="Edit Account"
+        footer={<div className="flex gap-3"><Button variant="secondary" onClick={() => { setEditAccount(null); setForm({ ...emptyForm }) }} className="flex-1">Cancel</Button><Button onClick={handleEdit} className="flex-1">Save</Button></div>}
+      >{savingsFormJsx}</Modal>
 
       {/* Detail / Growth Projection Modal */}
       <Modal open={!!selectedAccount} onClose={() => setSelected(null)} title={selectedAccount?.name ?? ''} size="lg">

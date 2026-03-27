@@ -1,10 +1,7 @@
 import { useState } from 'react'
 import { Tab } from '../../types'
-import { RotateCcw, Lock, ShieldCheck, ShieldOff, LogOut } from 'lucide-react'
-import { resetToDemo } from '../../store/store'
-import { hasPinSet } from '../../utils/auth'
+import { LogOut } from 'lucide-react'
 import { Modal } from '../ui/Modal'
-import { SecuritySettings } from '../Lock/LockScreen'
 
 const titles: Record<Tab, string> = {
   dashboard: 'Dashboard',
@@ -32,7 +29,6 @@ const subtitles: Record<Tab, string> = {
 
 interface HeaderProps {
   activeTab: Tab
-  onLock: () => void
   userEmail?: string
   onSignOut?: () => void
 }
@@ -45,64 +41,18 @@ function getInitials(email: string): string {
   return local.slice(0, 2).toUpperCase()
 }
 
-export function Header({ activeTab, onLock, userEmail, onSignOut }: HeaderProps) {
-  const [securityOpen, setSecurityOpen] = useState(false)
+export function Header({ activeTab, userEmail, onSignOut }: HeaderProps) {
   const [accountOpen, setAccountOpen] = useState(false)
-  const pinSet = hasPinSet()
 
-  const handleReset = () => {
-    if (confirm('Reset all data to demo data? This cannot be undone.')) resetToDemo()
-  }
-
-  const handleLockAndClose = () => {
-    setSecurityOpen(false)
-    onLock()
-  }
 
   return (
     <>
-      <header className="flex items-center justify-between px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-800 bg-gray-950/80 backdrop-blur-sm sticky top-0 z-10">
+      <header className="flex items-center justify-between px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-800 bg-gray-950/80 backdrop-blur-sm sticky top-0 z-10" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
         <div>
           <h1 className="text-lg sm:text-xl font-bold text-white">{titles[activeTab]}</h1>
           <p className="hidden sm:block text-sm text-gray-400">{subtitles[activeTab]}</p>
         </div>
         <div className="flex items-center gap-1 sm:gap-2">
-          <button
-            onClick={handleReset}
-            className="flex items-center gap-1.5 px-2 py-1.5 sm:px-3 rounded-lg text-xs text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
-            title="Reset to demo data"
-          >
-            <RotateCcw size={13} />
-            <span className="hidden sm:inline">Reset Demo</span>
-          </button>
-
-          {/* PIN / Lock */}
-          <button
-            onClick={() => pinSet ? onLock() : setSecurityOpen(true)}
-            className={`flex items-center gap-1.5 px-2 py-1.5 sm:px-3 rounded-lg text-xs font-medium transition-colors ${
-              pinSet
-                ? 'text-emerald-400 hover:bg-emerald-500/10'
-                : 'text-amber-400 hover:bg-amber-500/10'
-            }`}
-            title={pinSet ? 'Lock app' : 'Set up PIN'}
-          >
-            {pinSet ? <Lock size={13} /> : <ShieldOff size={13} />}
-            <span className="hidden sm:inline">{pinSet ? 'Lock' : 'No PIN'}</span>
-          </button>
-
-          {/* Shield → security settings */}
-          <button
-            onClick={() => setSecurityOpen(true)}
-            className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center transition-colors ${
-              pinSet
-                ? 'bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25'
-                : 'bg-amber-500/15 text-amber-400 hover:bg-amber-500/25'
-            }`}
-            title="Security settings"
-          >
-            <ShieldCheck size={16} />
-          </button>
-
           {/* Account avatar — shows user's initials */}
           {userEmail && (
             <button
@@ -115,11 +65,6 @@ export function Header({ activeTab, onLock, userEmail, onSignOut }: HeaderProps)
           )}
         </div>
       </header>
-
-      {/* Security settings modal */}
-      <Modal open={securityOpen} onClose={() => setSecurityOpen(false)} title="Security Settings">
-        <SecuritySettings onClose={() => setSecurityOpen(false)} onLock={handleLockAndClose} />
-      </Modal>
 
       {/* Account modal */}
       <Modal open={accountOpen} onClose={() => setAccountOpen(false)} title="Account">

@@ -128,18 +128,6 @@ export function Assets() {
           onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
         />
       </FormField>
-      <div className="flex gap-3 pt-2">
-        <Button
-          variant="secondary"
-          onClick={() => { setAddOpen(false); setEditAsset(null) }}
-          className="flex-1"
-        >
-          Cancel
-        </Button>
-        <Button onClick={editAsset ? handleEdit : handleAdd} className="flex-1">
-          {editAsset ? 'Save Changes' : 'Add Asset'}
-        </Button>
-      </div>
     </div>
   )
 
@@ -154,7 +142,7 @@ export function Assets() {
       </div>
 
       {/* Total + category breakdown */}
-      <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+      <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 sm:p-6">
         <p className="text-sm text-gray-400 mb-1">Total Assets Value</p>
         <p className="text-4xl font-bold text-white mb-4">${totalValue.toLocaleString()}</p>
         <div className="flex flex-wrap gap-3">
@@ -193,8 +181,8 @@ export function Assets() {
                   <div className={`p-2.5 rounded-xl ${catColors[asset.category]}`}>
                     <CatIcon category={asset.category} size={20} />
                   </div>
-                  <div>
-                    <p className="font-semibold text-white">{asset.name}</p>
+                  <div className="min-w-0">
+                    <p className="font-semibold text-white truncate">{asset.name}</p>
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${catColors[asset.category]}`}>
                       {catLabels[asset.category]}
                     </span>
@@ -202,14 +190,16 @@ export function Assets() {
                 </div>
                 <div className="flex gap-1">
                   <button
+                    type="button"
                     onClick={() => openEdit(asset)}
-                    className="p-1.5 rounded-lg hover:bg-gray-700 text-gray-600 hover:text-white transition-colors"
+                    className="p-1.5 rounded-lg hover:bg-gray-700 text-gray-600 hover:text-white transition-colors cursor-pointer"
                   >
                     <Edit2 size={13} />
                   </button>
                   <button
+                    type="button"
                     onClick={() => removeAsset(asset.id)}
-                    className="p-1.5 rounded-lg hover:bg-rose-500/20 text-gray-600 hover:text-rose-400 transition-colors"
+                    className="p-1.5 rounded-lg hover:bg-rose-500/20 text-gray-600 hover:text-rose-400 transition-colors cursor-pointer"
                   >
                     <Trash2 size={13} />
                   </button>
@@ -222,7 +212,7 @@ export function Assets() {
                   <span className="text-xl font-bold text-white">${asset.value.toLocaleString()}</span>
                 </div>
                 {asset.notes && (
-                  <p className="text-xs text-gray-500 bg-gray-800 rounded-lg px-3 py-2">{asset.notes}</p>
+                  <p className="text-xs text-gray-500 bg-gray-800 rounded-lg px-3 py-2 break-words">{asset.notes}</p>
                 )}
                 <p className="text-xs text-gray-600">
                   Added {new Date(asset.addedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
@@ -233,15 +223,20 @@ export function Assets() {
         </div>
       )}
 
-      {/* Add Modal */}
-      <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add Asset" size="lg">
-        {assetFormJsx}
-      </Modal>
-
-      {/* Edit Modal */}
-      <Modal open={!!editAsset} onClose={() => setEditAsset(null)} title="Edit Asset" size="lg">
-        {assetFormJsx}
-      </Modal>
+      <Modal
+        open={addOpen}
+        onClose={() => { setAddOpen(false); setForm({ ...emptyForm }) }}
+        title="Add Asset"
+        size="lg"
+        footer={<div className="flex gap-3"><Button variant="secondary" onClick={() => { setAddOpen(false); setForm({ ...emptyForm }) }} className="flex-1">Cancel</Button><Button onClick={handleAdd} className="flex-1">Add Asset</Button></div>}
+      >{assetFormJsx}</Modal>
+      <Modal
+        open={!!editAsset}
+        onClose={() => { setEditAsset(null); setForm({ ...emptyForm }) }}
+        title="Edit Asset"
+        size="lg"
+        footer={<div className="flex gap-3"><Button variant="secondary" onClick={() => { setEditAsset(null); setForm({ ...emptyForm }) }} className="flex-1">Cancel</Button><Button onClick={handleEdit} className="flex-1">Save Changes</Button></div>}
+      >{assetFormJsx}</Modal>
     </div>
   )
 }

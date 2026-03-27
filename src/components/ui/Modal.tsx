@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 
 interface ModalProps {
@@ -6,10 +7,11 @@ interface ModalProps {
   onClose: () => void
   title: string
   children: React.ReactNode
+  footer?: React.ReactNode
   size?: 'sm' | 'md' | 'lg' | 'xl'
 }
 
-export function Modal({ open, onClose, title, children, size = 'md' }: ModalProps) {
+export function Modal({ open, onClose, title, children, footer, size = 'md' }: ModalProps) {
   useEffect(() => {
     if (!open) return
     const handler = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
@@ -19,28 +21,23 @@ export function Modal({ open, onClose, title, children, size = 'md' }: ModalProp
 
   // iOS-safe scroll lock.
   // `overflow: hidden` on <body> is ignored by iOS Safari — the page still
-  // scrolls behind the modal.  The correct fix is to fix the body in place at
-  // the current scroll offset and restore it on close.
+  // scrolls behind the modal. Fix the body at the current scroll offset and
+  // restore it on close.
   useEffect(() => {
     if (!open) return
-
     const scrollY = window.scrollY
     const body = document.body
-
     body.style.position = 'fixed'
     body.style.top = `-${scrollY}px`
     body.style.left = '0'
     body.style.right = '0'
-    // Prevent width collapse caused by the scrollbar disappearing
     body.style.overflowY = 'scroll'
-
     return () => {
       body.style.position = ''
       body.style.top = ''
       body.style.left = ''
       body.style.right = ''
       body.style.overflowY = ''
-      // Restore the scroll position silently
       window.scrollTo({ top: scrollY, behavior: 'instant' as ScrollBehavior })
     }
   }, [open])
@@ -48,55 +45,68 @@ export function Modal({ open, onClose, title, children, size = 'md' }: ModalProp
   if (!open) return null
 
   const sizeClass = {
-    sm: 'sm:max-w-sm',
-    md: 'sm:max-w-md',
-    lg: 'sm:max-w-lg',
-    xl: 'sm:max-w-2xl',
+    sm: 'max-w-sm',
+    md: 'max-w-md',
+    lg: 'max-w-lg',
+    xl: 'max-w-2xl',
   }[size]
 
-  return (
-    /*
-     * Mobile: flex column, anchored to TOP with pt-4 padding.
-     * When the iOS keyboard opens it shrinks the visual viewport from the
-     * bottom — anchoring to the top keeps the modal header always visible.
-     * The scrollable content area lets the user scroll to reach lower fields.
-     * Desktop (sm:): centered as usual.
-     */
-    <div className="fixed inset-0 z-50 flex flex-col justify-start pt-4 sm:justify-center sm:pt-0 sm:p-4 items-center">
-      {/* Backdrop — pointer-events only on itself so the panel stays tappable */}
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-
-      {/* Panel */}
+  /*
+   * Render into document.body via a portal so the modal is never clipped or
+   * offset by an overflow / transform ancestor (e.g. the <main overflow-y-auto>
+   * scroll container that wraps all tab content).  position:fixed is still used
+   * inside the portal so keyboard-avoidance and safe-area insets work normally.
+   *
+   * Centered overlay on both mobile and desktop — sits in the middle of the
+   * visible screen. mx-4 on the panel provides edge margins on mobile;
+   * max-w-* on the panel caps width on desktop.
+   */
+  return createPortal(
+    /* z-[200] sits above the bottom nav (z-50) and quick-add FAB (z-40) on all devices */
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50"
+      onClick={onClose}
+    >
+      {/* Panel — stopPropagation so clicks inside don't close the modal */}
       <div
+        onClick={e => e.stopPropagation()}
         className={`
           animate-scale-in
-          relative w-full ${sizeClass}
-          bg-gray-900 border border-gray-700 shadow-2xl
-          rounded-2xl
-          flex flex-col
-          max-h-[85dvh] sm:max-h-[90vh]
+          relative w-full mx-4 ${sizeClass}
+          bg-gray-900 border border-gray-700/80 shadow-2xl shadow-black/60
+          rounded-2xl ring-1 ring-white/5
+          flex flex-col overscroll-contain
+          max-h-[85vh]
         `}
       >
-        {/* Sticky header — always visible even when keyboard is open */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-700 shrink-0">
-          <h2 className="text-lg font-semibold text-white">{title}</h2>
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-700 shrink-0 gap-3 min-w-0">
+          <h2 className="text-lg font-semibold text-white truncate min-w-0">{title}</h2>
           <button
+            type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-gray-700 text-gray-400 hover:text-white transition-colors"
+            className="p-1.5 rounded-lg hover:bg-gray-700 text-gray-400 hover:text-white transition-colors cursor-pointer shrink-0"
           >
             <X size={18} />
           </button>
         </div>
 
-        {/* Scrollable content — user can scroll to reach fields below keyboard */}
-        <div className="flex-1 overflow-y-auto overscroll-contain p-5 pb-10"
-          // iOS Safari needs this hint to enable momentum scrolling inside
-          // fixed/overflow containers
+        {/* Scrollable content */}
+        <div
+          className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-5 pb-6"
           style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}
         >
           {children}
         </div>
+
+        {/* Sticky footer — always visible, never scrolls away */}
+        {footer && (
+          <div className="shrink-0 border-t border-gray-700/60 px-5 py-4">
+            {footer}
+          </div>
+        )}
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }

@@ -40,6 +40,27 @@ export default defineConfig({
       },
     }),
   ],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom'],
+          'vendor-recharts': ['recharts'],
+          'vendor-d3': [
+            'd3-shape',
+            'd3-scale',
+            'd3-path',
+            'd3-array',
+            'd3-color',
+            'd3-interpolate',
+            'd3-time',
+            'd3-timer',
+            'd3-ease',
+          ],
+        },
+      },
+    },
+  },
   server: {
     port: 5174,
     host: true, // allows access from phone on same WiFi

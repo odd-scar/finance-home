@@ -122,7 +122,7 @@ export function TripPlanner() {
       }))
       .filter(d => d.value > 0)
 
-  const makeTripFormJsx = (onSave: () => void) => (
+  const tripFormJsx = (
     <div className="space-y-4">
       <FormField label="Trip Name"><Input placeholder="Japan 2025" value={tripForm.name} onChange={e => setTripForm(f => ({ ...f, name: e.target.value }))} /></FormField>
       <FormField label="Destination"><Input placeholder="Tokyo, Japan" value={tripForm.destination} onChange={e => setTripForm(f => ({ ...f, destination: e.target.value }))} /></FormField>
@@ -131,14 +131,10 @@ export function TripPlanner() {
         <FormField label="End Date"><Input type="date" value={tripForm.endDate} onChange={e => setTripForm(f => ({ ...f, endDate: e.target.value }))} /></FormField>
       </div>
       <FormField label="Total Budget ($)"><Input type="number" placeholder="5000" value={tripForm.totalBudget} onChange={e => setTripForm(f => ({ ...f, totalBudget: e.target.value }))} /></FormField>
-      <div className="flex gap-3 pt-2">
-        <Button variant="secondary" onClick={() => { setAddTripOpen(false); setEditTripData(null) }} className="flex-1">Cancel</Button>
-        <Button onClick={onSave} className="flex-1">Save</Button>
-      </div>
     </div>
   )
 
-  const makeExpFormJsx = (onSave: () => void) => (
+  const expFormJsx = (
     <div className="space-y-4">
       <FormField label="Category">
         <Select value={expForm.category} onChange={e => setExpForm(f => ({ ...f, category: e.target.value as TripExpense['category'] }))}>
@@ -152,10 +148,6 @@ export function TripPlanner() {
           <Input type="number" placeholder="0" value={expForm.actual} onChange={e => setExpForm(f => ({ ...f, actual: e.target.value }))} />
         </FormField>
       </div>
-      <div className="flex gap-3 pt-2">
-        <Button variant="secondary" onClick={() => { setAddExpOpen(false); setEditExpData(null) }} className="flex-1">Cancel</Button>
-        <Button onClick={onSave} className="flex-1">Save</Button>
-      </div>
     </div>
   )
 
@@ -166,7 +158,7 @@ export function TripPlanner() {
           {/* Trips list */}
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-semibold text-white">Your Trips</h3>
-            <Button onClick={() => setAddTripOpen(true)}><Plus size={14} /> New Trip</Button>
+            <Button onClick={() => { setTripForm({ ...emptyTripForm }); setAddTripOpen(true) }}><Plus size={14} /> New Trip</Button>
           </div>
 
           {/* Afford calculator */}
@@ -217,8 +209,8 @@ export function TripPlanner() {
                       </div>
                     </div>
                     <div className="flex gap-1" onClick={e => e.stopPropagation()}>
-                      <button onClick={() => openEditTrip(trip)} className="p-1.5 text-gray-600 hover:text-white hover:bg-gray-700 rounded-lg"><Edit2 size={13} /></button>
-                      <button onClick={() => removeTrip(trip.id)} className="p-1.5 text-gray-600 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg"><Trash2 size={13} /></button>
+                      <button type="button" onClick={() => openEditTrip(trip)} className="p-1.5 text-gray-600 hover:text-white hover:bg-gray-700 rounded-lg cursor-pointer"><Edit2 size={13} /></button>
+                      <button type="button" onClick={() => removeTrip(trip.id)} className="p-1.5 text-gray-600 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg cursor-pointer"><Trash2 size={13} /></button>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 text-xs text-gray-500 mb-3">
@@ -264,7 +256,7 @@ export function TripPlanner() {
           return (
             <div className="space-y-5">
               <div className="flex items-center gap-3 flex-wrap">
-                <button onClick={() => setSelectedTrip(null)} className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors">←</button>
+                <button type="button" onClick={() => setSelectedTrip(null)} className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors">←</button>
                 <div className="flex-1 min-w-0">
                   <h2 className="text-lg sm:text-xl font-bold text-white truncate">{trip.name}</h2>
                   <p className="text-sm text-gray-400 flex items-center gap-1"><MapPin size={12} />{trip.destination}</p>
@@ -273,7 +265,7 @@ export function TripPlanner() {
                   <Button size="sm" variant="secondary" onClick={() => openEditTrip(trip)}>
                     <Edit2 size={13} /> Edit Trip
                   </Button>
-                  <Button size="sm" onClick={() => setAddExpOpen(true)}>
+                  <Button size="sm" onClick={() => { setExpForm({ ...emptyExpForm }); setAddExpOpen(true) }}>
                     <Plus size={13} /> Add Expense
                   </Button>
                 </div>
@@ -319,8 +311,8 @@ export function TripPlanner() {
                           )}
                         </div>
                         <div className="flex gap-1">
-                          <button onClick={() => openEditExp(exp)} className="p-1 text-gray-600 hover:text-white"><Edit2 size={12} /></button>
-                          <button onClick={() => { removeTripExpense(trip.id, exp.id) }} className="p-1 text-gray-600 hover:text-rose-400"><Trash2 size={12} /></button>
+                          <button type="button" onClick={() => openEditExp(exp)} className="p-1 text-gray-600 hover:text-white cursor-pointer"><Edit2 size={12} /></button>
+                          <button type="button" onClick={() => { removeTripExpense(trip.id, exp.id) }} className="p-1 text-gray-600 hover:text-rose-400 cursor-pointer"><Trash2 size={12} /></button>
                         </div>
                       </div>
                     ))}
@@ -349,18 +341,30 @@ export function TripPlanner() {
         })()
       )}
 
-      <Modal open={addTripOpen} onClose={() => setAddTripOpen(false)} title="New Trip">
-        {makeTripFormJsx(handleAddTrip)}
-      </Modal>
-      <Modal open={!!editTripData} onClose={() => setEditTripData(null)} title="Edit Trip">
-        {makeTripFormJsx(handleEditTrip)}
-      </Modal>
-      <Modal open={addExpOpen} onClose={() => setAddExpOpen(false)} title="Add Expense">
-        {makeExpFormJsx(handleAddExp)}
-      </Modal>
-      <Modal open={!!editExpData} onClose={() => setEditExpData(null)} title="Edit Expense">
-        {makeExpFormJsx(handleEditExp)}
-      </Modal>
+      <Modal
+        open={addTripOpen}
+        onClose={() => { setAddTripOpen(false); setTripForm({ ...emptyTripForm }) }}
+        title="New Trip"
+        footer={<div className="flex gap-3"><Button variant="secondary" onClick={() => { setAddTripOpen(false); setTripForm({ ...emptyTripForm }) }} className="flex-1">Cancel</Button><Button onClick={handleAddTrip} className="flex-1">Save</Button></div>}
+      >{tripFormJsx}</Modal>
+      <Modal
+        open={!!editTripData}
+        onClose={() => { setEditTripData(null); setTripForm({ ...emptyTripForm }) }}
+        title="Edit Trip"
+        footer={<div className="flex gap-3"><Button variant="secondary" onClick={() => { setEditTripData(null); setTripForm({ ...emptyTripForm }) }} className="flex-1">Cancel</Button><Button onClick={handleEditTrip} className="flex-1">Save</Button></div>}
+      >{tripFormJsx}</Modal>
+      <Modal
+        open={addExpOpen}
+        onClose={() => { setAddExpOpen(false); setExpForm({ ...emptyExpForm }) }}
+        title="Add Expense"
+        footer={<div className="flex gap-3"><Button variant="secondary" onClick={() => { setAddExpOpen(false); setExpForm({ ...emptyExpForm }) }} className="flex-1">Cancel</Button><Button onClick={handleAddExp} className="flex-1">Save</Button></div>}
+      >{expFormJsx}</Modal>
+      <Modal
+        open={!!editExpData}
+        onClose={() => { setEditExpData(null); setExpForm({ ...emptyExpForm }) }}
+        title="Edit Expense"
+        footer={<div className="flex gap-3"><Button variant="secondary" onClick={() => { setEditExpData(null); setExpForm({ ...emptyExpForm }) }} className="flex-1">Cancel</Button><Button onClick={handleEditExp} className="flex-1">Save</Button></div>}
+      >{expFormJsx}</Modal>
     </div>
   )
 }
