@@ -298,6 +298,7 @@ export function Stocks() {
                     </td>
                     <td className="px-4 py-3">
                       <button
+                        type="button"
                         onClick={e => { e.stopPropagation(); removeStock(stock.id) }}
                         className="p-1.5 rounded-lg hover:bg-rose-500/20 text-gray-600 hover:text-rose-400 transition-colors"
                       >
@@ -341,6 +342,7 @@ export function Stocks() {
                   <p className="text-xs text-gray-500">{formatCurrency(value)}</p>
                 </div>
                 <button
+                  type="button"
                   onClick={e => { e.stopPropagation(); removeStock(stock.id) }}
                   className="p-1.5 rounded-lg hover:bg-rose-500/20 text-gray-600 hover:text-rose-400 transition-colors shrink-0"
                 >
@@ -434,7 +436,7 @@ export function Stocks() {
                     <p className="font-bold text-white">{stock.symbol}</p>
                     <p className="text-xs text-gray-500">{stock.name}</p>
                   </div>
-                  <button onClick={() => removeStock(stock.id)} className="p-1 text-gray-600 hover:text-rose-400">
+                  <button type="button" onClick={() => removeStock(stock.id)} className="p-1 text-gray-600 hover:text-rose-400">
                     <Trash2 size={13} />
                   </button>
                 </div>
@@ -448,6 +450,7 @@ export function Stocks() {
                   <Sparkline data={stock.priceHistory.slice(-13)} positive={todayPct >= 0} />
                 </div>
                 <button
+                  type="button"
                   className="mt-3 w-full text-xs py-1.5 bg-brand-600/20 hover:bg-brand-600/40 text-brand-400 rounded-lg transition-colors"
                   onClick={() => updateStock(stock.id, { watchlist: false })}
                 >

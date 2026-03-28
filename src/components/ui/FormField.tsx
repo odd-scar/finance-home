@@ -69,7 +69,7 @@ export function Button({ variant = 'primary', size = 'md', className = '', child
     <button
       type="button"
       {...props}
-      className={`inline-flex items-center gap-2 font-medium rounded-lg transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 cursor-pointer ${variantClass[variant]} ${sizeClass[size]} ${className}`}
+      className={`inline-flex items-center gap-2 font-medium rounded-lg transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 cursor-pointer touch-manipulation ${variantClass[variant]} ${sizeClass[size]} ${className}`}
     >
       {children}
     </button>

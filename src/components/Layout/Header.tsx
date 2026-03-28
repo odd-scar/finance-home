@@ -56,8 +56,9 @@ export function Header({ activeTab, userEmail, onSignOut }: HeaderProps) {
           {/* Account avatar — shows user's initials */}
           {userEmail && (
             <button
+              type="button"
               onClick={() => setAccountOpen(true)}
-              className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-brand-600 hover:bg-brand-500 text-white flex items-center justify-center transition-colors font-bold text-xs tracking-wide shadow-md shadow-brand-600/30"
+              className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-brand-600 hover:bg-brand-500 text-white flex items-center justify-center transition-colors font-bold text-xs tracking-wide shadow-md shadow-brand-600/30 touch-manipulation"
               title={userEmail}
             >
               {getInitials(userEmail)}

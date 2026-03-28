@@ -286,6 +286,7 @@ export function Dashboard() {
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold text-white">Net Worth Over Time</h3>
           <button
+            type="button"
             onClick={doSnapshot}
             className="flex items-center gap-1.5 px-2.5 py-1.5 bg-brand-600/20 hover:bg-brand-600/40 text-brand-400 rounded-lg text-xs font-medium transition-colors"
           >

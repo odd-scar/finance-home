@@ -122,20 +122,24 @@ export function WelcomeTour({ onComplete }: WelcomeTourProps) {
     }
   }, [visible, phase, tourIndex])
 
-  // Compute spotlight position for current tour step
+  // Compute spotlight position for current tour step.
+  // Uses querySelectorAll + first-visible check so that hidden sidebar elements
+  // (display:none on mobile) don't produce a zero-rect spotlight in the corner.
   const updateSpotlight = useCallback(() => {
     if (phase !== 'tour') {
       setSpotlightRect(null)
       return
     }
     const step = tourSteps[tourIndex]
-    const el = document.querySelector(`[data-tour-id="${step.tab}"]`)
-    if (el) {
+    const els = document.querySelectorAll(`[data-tour-id="${step.tab}"]`)
+    for (const el of Array.from(els)) {
       const r = el.getBoundingClientRect()
-      setSpotlightRect({ top: r.top, left: r.left, width: r.width, height: r.height })
-    } else {
-      setSpotlightRect(null)
+      if (r.width > 0 && r.height > 0) {
+        setSpotlightRect({ top: r.top, left: r.left, width: r.width, height: r.height })
+        return
+      }
     }
+    setSpotlightRect(null)
   }, [phase, tourIndex])
 
   useEffect(() => {

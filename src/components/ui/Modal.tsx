@@ -64,14 +64,14 @@ export function Modal({ open, onClose, title, children, footer, size = 'md' }: M
   return createPortal(
     /* z-[200] sits above the bottom nav (z-50) and quick-add FAB (z-40) on all devices */
     <div
-      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50"
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 cursor-pointer"
       onClick={onClose}
     >
       {/* Panel — stopPropagation so clicks inside don't close the modal */}
       <div
         onClick={e => e.stopPropagation()}
         className={`
-          animate-scale-in
+          animate-scale-in cursor-default
           relative w-full mx-4 ${sizeClass}
           bg-gray-900 border border-gray-700/80 shadow-2xl shadow-black/60
           rounded-2xl ring-1 ring-white/5
