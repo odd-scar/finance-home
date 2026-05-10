@@ -1,12 +1,188 @@
+import { useState, useEffect } from 'react'
 import { useAppStore } from '../../hooks/useAppStore'
 import { formatCurrency, calcPctChange, formatPercent } from '../../utils/finance'
 import { StatCard } from '../ui/Card'
 import { ProgressBar } from '../ui/ProgressBar'
-import { snapshotNetWorth } from '../../store/store'
+import { snapshotNetWorth, autoSnapshotIfNeeded } from '../../store/store'
+import { PaycheckOverridePanel } from '../PaycheckOverride/PaycheckOverridePanel'
 import {
   TrendingUp, CreditCard, PiggyBank, Target, Wallet,
-  ArrowUpRight, ArrowDownRight, Camera, Package,
+  ArrowUpRight, ArrowDownRight, Camera, Package, Zap,
+  AlertTriangle, AlertCircle, CheckCircle2, CalendarClock, Bell,
 } from 'lucide-react'
+import type { Bill, FinancialGoal, BudgetEntry } from '../../types'
+
+// ── Attention helpers ────────────────────────────────────────────────────────
+
+interface BillAlert {
+  bill: Bill
+  daysUntilDue: number
+}
+
+function getBillsDueSoon(bills: Bill[], daysAhead = 7): BillAlert[] {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const results: BillAlert[] = []
+
+  for (const bill of bills) {
+    if (bill.frequency !== 'monthly') continue
+    const thisMonth = new Date(today.getFullYear(), today.getMonth(), bill.dueDay)
+    const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, bill.dueDay)
+    const dueDate = thisMonth >= today ? thisMonth : nextMonth
+    const daysUntilDue = Math.round((dueDate.getTime() - today.getTime()) / 86_400_000)
+    if (daysUntilDue <= daysAhead) results.push({ bill, daysUntilDue })
+  }
+
+  return results.sort((a, b) => a.daysUntilDue - b.daysUntilDue)
+}
+
+interface BudgetAlert {
+  category: string
+  spent: number
+  limit: number
+  pct: number
+}
+
+function getBudgetAlerts(
+  budget: BudgetEntry[],
+  categoryLimits: Record<string, number>,
+  month: number,
+  year: number,
+): BudgetAlert[] {
+  return Object.entries(categoryLimits)
+    .map(([category, limit]) => {
+      const spent = budget
+        .filter(b => b.month === month && b.year === year && b.type === 'expense' && b.category === category)
+        .reduce((s, b) => s + b.amount, 0)
+      return { category, spent, limit, pct: limit > 0 ? spent / limit : 0 }
+    })
+    .filter(a => a.pct >= 0.7)
+    .sort((a, b) => b.pct - a.pct)
+}
+
+interface GoalAlert {
+  goal: FinancialGoal
+  behindBy: number // 0–1 fraction
+  expectedPct: number
+  actualPct: number
+}
+
+function getGoalAlerts(goals: FinancialGoal[]): GoalAlert[] {
+  const today = new Date()
+  return goals
+    .filter(g => g.targetDate && g.currentAmount < g.targetAmount)
+    .map(g => {
+      const start = new Date(g.addedAt)
+      const end = new Date(g.targetDate)
+      const totalMs = Math.max(1, end.getTime() - start.getTime())
+      const elapsedMs = today.getTime() - start.getTime()
+      const expectedPct = Math.min(1, Math.max(0, elapsedMs / totalMs))
+      const actualPct = g.targetAmount > 0 ? g.currentAmount / g.targetAmount : 0
+      return { goal: g, behindBy: expectedPct - actualPct, expectedPct, actualPct }
+    })
+    .filter(a => a.behindBy > 0.1)
+    .sort((a, b) => b.behindBy - a.behindBy)
+    .slice(0, 2)
+}
+
+// ── Attention panel ──────────────────────────────────────────────────────────
+
+function AttentionPanel({
+  billAlerts, budgetAlerts, goalAlerts,
+}: {
+  billAlerts: BillAlert[]
+  budgetAlerts: BudgetAlert[]
+  goalAlerts: GoalAlert[]
+}) {
+  const totalAlerts = billAlerts.length + budgetAlerts.length + goalAlerts.length
+  const isClean = totalAlerts === 0
+
+  if (isClean) {
+    return (
+      <div className="flex items-center gap-3 px-4 py-3 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl">
+        <CheckCircle2 size={18} className="text-emerald-400 shrink-0" />
+        <p className="text-sm text-emerald-300 font-medium">You're on track — no issues to flag this month.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-gray-900 border border-amber-500/20 rounded-2xl overflow-hidden">
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-800">
+        <Bell size={15} className="text-amber-400" />
+        <h3 className="text-sm font-semibold text-white">Needs Attention</h3>
+        <span className="ml-auto text-xs bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full">
+          {totalAlerts} {totalAlerts === 1 ? 'item' : 'items'}
+        </span>
+      </div>
+
+      <div className="divide-y divide-gray-800">
+        {/* Budget overruns */}
+        {budgetAlerts.map(a => {
+          const isOver = a.pct >= 1
+          return (
+            <div key={a.category} className="flex items-center gap-3 px-4 py-3">
+              <div className={`p-1.5 rounded-lg shrink-0 ${isOver ? 'bg-rose-500/20' : 'bg-amber-500/20'}`}>
+                <AlertTriangle size={13} className={isOver ? 'text-rose-400' : 'text-amber-400'} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-white">{a.category}</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <div className="flex-1 h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                    <div
+                      className={`h-1.5 rounded-full transition-all ${isOver ? 'bg-rose-500' : 'bg-amber-500'}`}
+                      style={{ width: `${Math.min(100, a.pct * 100).toFixed(0)}%` }}
+                    />
+                  </div>
+                  <span className="text-xs text-gray-500 shrink-0">
+                    {formatCurrency(a.spent)} / {formatCurrency(a.limit)}
+                  </span>
+                </div>
+              </div>
+              <span className={`text-xs font-semibold shrink-0 ${isOver ? 'text-rose-400' : 'text-amber-400'}`}>
+                {isOver ? 'Over!' : `${Math.round(a.pct * 100)}%`}
+              </span>
+            </div>
+          )
+        })}
+
+        {/* Bills due soon */}
+        {billAlerts.map(({ bill, daysUntilDue }) => (
+          <div key={bill.id} className="flex items-center gap-3 px-4 py-3">
+            <div className="p-1.5 bg-sky-500/20 rounded-lg shrink-0">
+              <CalendarClock size={13} className="text-sky-400" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-white">{bill.name}</p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {daysUntilDue === 0 ? 'Due today' : daysUntilDue === 1 ? 'Due tomorrow' : `Due in ${daysUntilDue} days`}
+              </p>
+            </div>
+            <span className="text-sm font-semibold text-sky-400 shrink-0">{formatCurrency(bill.amount)}</span>
+          </div>
+        ))}
+
+        {/* Off-pace goals */}
+        {goalAlerts.map(({ goal, behindBy, expectedPct, actualPct }) => (
+          <div key={goal.id} className="flex items-center gap-3 px-4 py-3">
+            <div className="p-1.5 bg-violet-500/20 rounded-lg shrink-0">
+              <AlertCircle size={13} className="text-violet-400" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-white">{goal.name}</p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {Math.round(actualPct * 100)}% saved, expected {Math.round(expectedPct * 100)}% by now
+              </p>
+            </div>
+            <span className="text-xs font-semibold text-violet-400 shrink-0">
+              -{Math.round(behindBy * 100)}% pace
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
   BarChart, Bar, CartesianGrid, LineChart, Line,
@@ -26,7 +202,20 @@ const currentMonthStr = () => {
 }
 
 export function Dashboard() {
-  const { stocks, debts, savings, goals, budget, assets, netWorthHistory } = useAppStore()
+  const { stocks, debts, savings, goals, budget, assets, bills, netWorthHistory, categoryLimits } = useAppStore()
+  const [overrideOpen, setOverrideOpen] = useState(false)
+
+  // Auto-snapshot net worth once per month on load
+  useEffect(() => { autoSnapshotIfNeeded() }, [])
+
+  const now = new Date()
+  const curM = now.getMonth() + 1
+  const curY = now.getFullYear()
+
+  // Attention data
+  const billAlerts   = getBillsDueSoon(bills)
+  const budgetAlerts = getBudgetAlerts(budget, categoryLimits, curM, curY)
+  const goalAlerts   = getGoalAlerts(goals)
 
   // Totals
   const totalDebt = debts.reduce((s, d) => s + d.balance, 0)
@@ -44,8 +233,6 @@ export function Dashboard() {
   const emergencySavings = savings
     .filter(a => a.category === 'emergency')
     .reduce((s, a) => s + a.balance, 0)
-  const now = new Date()
-  const curM = now.getMonth() + 1, curY = now.getFullYear()
   // Average monthly expenses from last 3 months of budget
   const last3MonthsExpenses: number[] = []
   for (let i = 1; i <= 3; i++) {
@@ -126,6 +313,25 @@ export function Dashboard() {
 
   return (
     <div className="p-4 lg:p-6 space-y-4 lg:space-y-6 animate-fade-in">
+
+      {/* Paycheck Override */}
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => setOverrideOpen(true)}
+          className="flex items-center gap-2 px-4 py-2.5 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 hover:border-amber-500/50 text-amber-400 rounded-xl text-sm font-medium transition-all duration-200 active:scale-95"
+        >
+          <Zap size={15} className="shrink-0" />
+          Paycheck Override
+        </button>
+      </div>
+
+      {/* Needs Attention */}
+      <AttentionPanel
+        billAlerts={billAlerts}
+        budgetAlerts={budgetAlerts}
+        goalAlerts={goalAlerts}
+      />
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 lg:gap-4">
@@ -408,6 +614,8 @@ export function Dashboard() {
           })}
         </div>
       </div>
+
+      <PaycheckOverridePanel open={overrideOpen} onClose={() => setOverrideOpen(false)} />
     </div>
   )
 }

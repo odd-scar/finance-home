@@ -66,9 +66,6 @@ export function TripPlanner() {
       totalBudget: parseFloat(tripForm.totalBudget) || 0,
     })
     setEditTripData(null)
-    if (selectedTrip?.id === editTripData.id) {
-      setSelectedTrip(prev => prev ? { ...prev, ...tripForm, totalBudget: parseFloat(tripForm.totalBudget) || 0 } : null)
-    }
   }
 
   const openEditTrip = (t: Trip) => {
@@ -88,9 +85,6 @@ export function TripPlanner() {
     addTripExpense(selectedTrip.id, expense)
     setExpForm({ ...emptyExpForm })
     setAddExpOpen(false)
-    // Refresh selected trip from store
-    const trip = trips.find(t => t.id === selectedTrip.id)
-    if (trip) setSelectedTrip({ ...trip, expenses: [...trip.expenses, expense] })
   }
 
   const handleEditExp = () => {

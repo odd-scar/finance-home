@@ -13,6 +13,7 @@ const titles: Record<Tab, string> = {
   budget: 'Budget',
   bills: 'Bills',
   assets: 'Assets',
+  learn: 'Investor Guide',
 }
 
 const subtitles: Record<Tab, string> = {
@@ -25,6 +26,7 @@ const subtitles: Record<Tab, string> = {
   budget: 'Monitor income & expenses',
   bills: 'Manage recurring bills',
   assets: 'Track physical assets',
+  learn: 'Build wealth with confidence',
 }
 
 interface HeaderProps {

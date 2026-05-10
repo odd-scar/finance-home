@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import React, { useState } from 'react'
 import { supabase } from '../../utils/supabase'
 import { DollarSign, Mail, Lock, Eye, EyeOff, AlertTriangle, Loader2, UserPlus, LogIn, CheckCircle2 } from 'lucide-react'
 
@@ -114,13 +114,15 @@ export function AuthScreen() {
             </button>
           </div>
 
-          <div className="space-y-3" onKeyDown={handleKeyDown}>
+          <form className="space-y-3" onSubmit={e => { e.preventDefault(); mode === 'login' ? handleLogin() : mode === 'signup' ? handleSignup() : handleReset() }} onKeyDown={handleKeyDown}>
 
             {/* Email */}
             <div className="relative">
               <Mail size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" />
               <input
                 type="email"
+                name="email"
+                autoComplete="email"
                 placeholder="Email address"
                 value={email}
                 onChange={e => { setEmail(e.target.value); clear() }}
@@ -135,6 +137,8 @@ export function AuthScreen() {
                 <Lock size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" />
                 <input
                   type={showPassword ? 'text' : 'password'}
+                  name="password"
+                  autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                   placeholder="Password"
                   value={password}
                   onChange={e => { setPassword(e.target.value); clear() }}
@@ -156,6 +160,8 @@ export function AuthScreen() {
                 <Lock size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" />
                 <input
                   type={showPassword ? 'text' : 'password'}
+                  name="confirm-password"
+                  autoComplete="new-password"
                   placeholder="Confirm password"
                   value={confirmPassword}
                   onChange={e => { setConfirmPassword(e.target.value); clear() }}
@@ -190,7 +196,7 @@ export function AuthScreen() {
 
             {/* Submit button */}
             <button
-              onClick={mode === 'login' ? handleLogin : mode === 'signup' ? handleSignup : handleReset}
+              type="submit"
               disabled={loading}
               className="w-full py-3 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
             >
@@ -219,7 +225,7 @@ export function AuthScreen() {
                 ← Back to login
               </button>
             )}
-          </div>
+          </form>
         </div>
 
         {/* Footer note */}

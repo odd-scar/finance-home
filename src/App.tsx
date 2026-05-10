@@ -11,6 +11,7 @@ import { TripPlanner } from './components/TripPlanner/TripPlanner'
 import { Budget } from './components/Budget/Budget'
 import { Bills } from './components/Bills/Bills'
 import { Assets } from './components/Assets/Assets'
+import { Learn } from './components/Learn/Learn'
 import { AuthScreen, UpdatePasswordScreen } from './components/Auth/AuthScreen'
 import { Modal } from './components/ui/Modal'
 import { loadFromSupabase, setSupabaseUser, signOutCleanup } from './store/store'
@@ -97,6 +98,7 @@ const content: Record<Tab, React.ReactNode> = {
     budget: <Budget />,
     bills: <Bills />,
     assets: <Assets />,
+    learn: <Learn />,
   }
 
   const quickAddItems = [
@@ -143,7 +145,7 @@ const content: Record<Tab, React.ReactNode> = {
       </div>
 
       {/* Quick Add floating button */}
-      <div className="fixed bottom-20 right-4 z-40 lg:bottom-6 lg:right-6">
+      <div className="fixed bottom-28 right-4 z-40 lg:bottom-6 lg:right-6">
         {/* Dropdown menu */}
         {quickAddOpen && (
           <>

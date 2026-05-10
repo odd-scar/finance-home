@@ -1,4 +1,5 @@
-import { AppState, Stock, Debt, SavingsAccount, FinancialGoal, Trip, TripExpense, BudgetEntry, Bill, Asset, NetWorthSnapshot } from '../types'
+import { AppState, Stock, Debt, SavingsAccount, FinancialGoal, Trip, TripExpense, BudgetEntry, Bill, Asset, NetWorthSnapshot, IncomeHistory } from '../types'
+import { v4 as uuid } from 'uuid'
 import { demoStocks, demoDebts, demoSavings, demoGoals, demoTrips, demoBudget, demoBills, demoAssets } from '../data/demo'
 import { encryptData, decryptData } from '../utils/cryptoStore'
 import { supabase } from '../utils/supabase'
@@ -68,16 +69,19 @@ export async function loadFromSupabase(userId: string): Promise<void> {
       // so old records without a field don't accidentally show demo content.
       const cloud = data.state as Partial<AppState>
       state = {
-        stocks:          cloud.stocks          ?? [],
-        debts:           cloud.debts           ?? [],
-        savings:         cloud.savings         ?? [],
-        goals:           cloud.goals           ?? [],
-        trips:           cloud.trips           ?? [],
-        budget:          cloud.budget          ?? [],
-        bills:           cloud.bills           ?? [],
-        assets:          cloud.assets          ?? [],
-        netWorthHistory: cloud.netWorthHistory ?? [],
-        lastStockUpdate: cloud.lastStockUpdate ?? new Date().toISOString(),
+        stocks:                cloud.stocks                ?? [],
+        debts:                 cloud.debts                 ?? [],
+        savings:               cloud.savings               ?? [],
+        goals:                 cloud.goals                 ?? [],
+        trips:                 cloud.trips                 ?? [],
+        budget:                cloud.budget                ?? [],
+        bills:                 cloud.bills                 ?? [],
+        assets:                cloud.assets                ?? [],
+        netWorthHistory:       cloud.netWorthHistory       ?? [],
+        lastStockUpdate:       cloud.lastStockUpdate       ?? new Date().toISOString(),
+        recurringRolledOver:   (cloud as AppState).recurringRolledOver ?? [],
+        incomeHistory:         (cloud as AppState).incomeHistory       ?? [],
+        categoryLimits:        (cloud as AppState).categoryLimits      ?? {},
       }
       // Persist locally so the app works offline after first load
       const json = JSON.stringify(state)
@@ -128,6 +132,9 @@ function defaultState(): AppState {
     assets: demoAssets,
     netWorthHistory: [],
     lastStockUpdate: new Date().toISOString(),
+    recurringRolledOver: [],
+    incomeHistory: [],
+    categoryLimits: {},
   }
 }
 
@@ -144,6 +151,9 @@ function emptyState(): AppState {
     assets: [],
     netWorthHistory: [],
     lastStockUpdate: new Date().toISOString(),
+    recurringRolledOver: [],
+    incomeHistory: [],
+    categoryLimits: {},
   }
 }
 
@@ -177,6 +187,9 @@ function loadState(): AppState {
       assets: parsed.assets || demoAssets,
       netWorthHistory: parsed.netWorthHistory || [],
       lastStockUpdate: parsed.lastStockUpdate || new Date().toISOString(),
+      recurringRolledOver: parsed.recurringRolledOver || [],
+      incomeHistory: parsed.incomeHistory || [],
+      categoryLimits: parsed.categoryLimits || {},
     }
   } catch {
     return defaultState()
@@ -324,6 +337,174 @@ export const updateBudgetEntry = (id: string, updates: Partial<BudgetEntry>) =>
 export const removeBudgetEntry = (id: string) =>
   commit(s => ({ ...s, budget: s.budget.filter(b => b.id !== id) }))
 
+/**
+ * Roll over recurring budget entries from the previous month into `month/year`.
+ * Only runs once per month (tracked in recurringRolledOver). Safe to call multiple times.
+ * Entries marked thisMonthOverride are rolled over using their originalRecurringAmount
+ * so the temporary change reverts automatically the next month.
+ */
+export function rolloverRecurringEntries(month: number, year: number) {
+  const monthKey = `${year}-${String(month).padStart(2, '0')}`
+  if (state.recurringRolledOver.includes(monthKey)) return
+
+  let prevMonth = month - 1, prevYear = year
+  if (prevMonth < 1) { prevMonth = 12; prevYear-- }
+
+  const recurringFromPrev = state.budget.filter(
+    b => b.month === prevMonth && b.year === prevYear && b.recurring
+  )
+
+  const targetEntries = state.budget.filter(b => b.month === month && b.year === year)
+
+  const newEntries = recurringFromPrev
+    .filter(r => !targetEntries.some(
+      t => t.category === r.category && t.description === r.description && t.type === r.type
+    ))
+    .map(r => {
+      // If last month had a one-time override, restore the original recurring amount
+      const amount = r.thisMonthOverride && r.originalRecurringAmount !== undefined
+        ? r.originalRecurringAmount
+        : r.amount
+      const { thisMonthOverride: _a, originalRecurringAmount: _b, ...rest } = r
+      return {
+        ...rest,
+        id: uuid(),
+        month,
+        year,
+        amount,
+        addedAt: new Date().toISOString(),
+      }
+    })
+
+  commit(s => ({
+    ...s,
+    budget: [...s.budget, ...newEntries],
+    recurringRolledOver: [...s.recurringRolledOver, monthKey],
+  }))
+}
+
+/**
+ * Update a recurring income entry for this month only.
+ * The original amount is stored so the next rollover restores it automatically.
+ */
+export function updateBudgetEntryThisMonth(id: string, updates: Partial<BudgetEntry>) {
+  const entry = state.budget.find(b => b.id === id)
+  if (!entry) return
+  commit(s => ({
+    ...s,
+    budget: s.budget.map(b =>
+      b.id === id
+        ? {
+            ...b,
+            ...updates,
+            thisMonthOverride: true,
+            // Preserve the original recurring amount so rollover can restore it
+            originalRecurringAmount: b.originalRecurringAmount ?? b.amount,
+          }
+        : b
+    ),
+  }))
+}
+
+/**
+ * Update a recurring income entry from this month onward.
+ * All existing future entries in the same recurring series are updated.
+ * A history record is created logging the old amount with its end date.
+ */
+export function updateBudgetEntryGoingForward(
+  id: string,
+  updates: Partial<BudgetEntry>,
+  viewMonth: number,
+  viewYear: number
+) {
+  const entry = state.budget.find(b => b.id === id)
+  if (!entry) return
+
+  const oldAmount = entry.amount
+  const newAmount = updates.amount ?? oldAmount
+  const newCategory = updates.category ?? entry.category
+  const newDescription = updates.description ?? entry.description
+
+  const currentMonthKey = `${viewYear}-${String(viewMonth).padStart(2, '0')}`
+  const prevMonthNum = viewMonth === 1 ? 12 : viewMonth - 1
+  const prevYearNum  = viewMonth === 1 ? viewYear - 1 : viewYear
+  const prevMonthKey = `${prevYearNum}-${String(prevMonthNum).padStart(2, '0')}`
+
+  let historyUpdates = [...state.incomeHistory]
+
+  if (oldAmount !== newAmount) {
+    // Close any open history record for this income source
+    const openRecord = state.incomeHistory.find(
+      h => h.category === entry.category &&
+           h.description === entry.description &&
+           h.endDate === null
+    )
+
+    if (openRecord) {
+      historyUpdates = historyUpdates.map(h =>
+        h.id === openRecord.id ? { ...h, endDate: prevMonthKey } : h
+      )
+    } else {
+      // First time tracking history — backfill a past record from the earliest budget entry
+      const earliest = [...state.budget]
+        .filter(b =>
+          b.category === entry.category &&
+          b.description === entry.description &&
+          b.type === entry.type &&
+          b.recurring
+        )
+        .sort((a, b) => a.year !== b.year ? a.year - b.year : a.month - b.month)[0]
+
+      const startDate = earliest
+        ? `${earliest.year}-${String(earliest.month).padStart(2, '0')}`
+        : currentMonthKey
+
+      if (startDate < currentMonthKey) {
+        historyUpdates.push({
+          id: uuid(),
+          category: entry.category,
+          description: entry.description,
+          amount: oldAmount,
+          startDate,
+          endDate: prevMonthKey,
+        })
+      }
+    }
+
+    // Open a new current record with the updated amount
+    historyUpdates.push({
+      id: uuid(),
+      category: newCategory,
+      description: newDescription,
+      amount: newAmount,
+      startDate: currentMonthKey,
+      endDate: null,
+    })
+  }
+
+  commit(s => ({
+    ...s,
+    incomeHistory: historyUpdates,
+    budget: s.budget.map(b => {
+      // Update the edited entry
+      if (b.id === id) {
+        return { ...b, ...updates, thisMonthOverride: false, originalRecurringAmount: undefined }
+      }
+      // Also update all future entries in the same recurring series
+      const isFutureMatch =
+        b.category === entry.category &&
+        b.description === entry.description &&
+        b.type === entry.type &&
+        b.recurring &&
+        (b.year > viewYear || (b.year === viewYear && b.month > viewMonth))
+      if (isFutureMatch) {
+        return { ...b, ...updates }
+      }
+      return b
+    }),
+  }))
+}
+
 // Bills
 export const addBill = (bill: Bill) => commit(s => ({ ...s, bills: [...s.bills, bill] }))
 export const updateBill = (id: string, updates: Partial<Bill>) =>
@@ -343,6 +524,45 @@ export const snapshotNetWorth = (snapshot: NetWorthSnapshot) =>
     return { ...s, netWorthHistory: [...filtered, snapshot].sort((a, b) => a.month.localeCompare(b.month)) }
   })
 
+// Category Limits
+export const setCategoryLimit = (category: string, amount: number) =>
+  commit(s => ({ ...s, categoryLimits: { ...s.categoryLimits, [category]: amount } }))
+
+export const removeCategoryLimit = (category: string) =>
+  commit(s => {
+    const limits = { ...s.categoryLimits }
+    delete limits[category]
+    return { ...s, categoryLimits: limits }
+  })
+
+/**
+ * Silently snapshots net worth for the current month if one doesn't already exist.
+ * Called automatically on login so the history chart fills in without user action.
+ */
+export function autoSnapshotIfNeeded() {
+  const now = new Date()
+  const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  if (state.netWorthHistory.some(h => h.month === month)) return
+  // Only auto-snapshot if the user has at least some real data
+  const hasData = state.savings.length > 0 || state.debts.length > 0 ||
+    state.assets.length > 0 || state.stocks.some(s => !s.watchlist && s.shares > 0)
+  if (!hasData) return
+  const savTotal  = state.savings.reduce((s, a) => s + a.balance, 0)
+  const portValue = state.stocks
+    .filter(s => !s.watchlist && s.shares > 0)
+    .reduce((s, st) => s + st.shares * st.currentPrice, 0)
+  const assTotal  = state.assets.reduce((s, a) => s + a.value, 0)
+  const debtTotal = state.debts.reduce((s, d) => s + d.balance, 0)
+  snapshotNetWorth({
+    month,
+    savings:   savTotal,
+    portfolio: portValue,
+    assets:    assTotal,
+    debt:      debtTotal,
+    net:       savTotal + portValue + assTotal - debtTotal,
+  })
+}
+
 // Reset
 export const resetToDemo = () =>
   commit(() => ({
@@ -356,4 +576,7 @@ export const resetToDemo = () =>
     assets: demoAssets,
     netWorthHistory: [],
     lastStockUpdate: new Date().toISOString(),
+    recurringRolledOver: [],
+    incomeHistory: [],
+    categoryLimits: {},
   }))

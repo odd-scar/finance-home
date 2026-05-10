@@ -1,4 +1,4 @@
-export type Tab = 'dashboard' | 'stocks' | 'debt' | 'savings' | 'goals' | 'trips' | 'budget' | 'bills' | 'assets'
+export type Tab = 'dashboard' | 'stocks' | 'debt' | 'savings' | 'goals' | 'trips' | 'budget' | 'bills' | 'assets' | 'learn'
 
 export interface Stock {
   id: string
@@ -74,7 +74,24 @@ export interface BudgetEntry {
   description: string
   amount: number
   type: 'income' | 'expense'
+  recurring?: boolean
+  /** Marks a one-time override — amount reverts to originalRecurringAmount on next rollover */
+  thisMonthOverride?: boolean
+  /** The recurring amount to restore after a thisMonthOverride rolls over */
+  originalRecurringAmount?: number
   addedAt: string
+}
+
+/** Records a period of income at a given amount, enabling change-over-time tracking */
+export interface IncomeHistory {
+  id: string
+  category: string
+  description: string
+  amount: number
+  /** "YYYY-MM" — first month this amount was in effect */
+  startDate: string
+  /** "YYYY-MM" — last month this amount was in effect; null means currently active */
+  endDate: string | null
 }
 
 export interface Bill {
@@ -118,4 +135,8 @@ export interface AppState {
   assets: Asset[]
   netWorthHistory: NetWorthSnapshot[]
   lastStockUpdate: string | null
+  recurringRolledOver: string[]
+  incomeHistory: IncomeHistory[]
+  /** Monthly spending limits per budget category, e.g. { 'Groceries': 400 } */
+  categoryLimits: Record<string, number>
 }

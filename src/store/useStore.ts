@@ -20,6 +20,9 @@ function loadState(): AppState {
         assets: parsed.assets || demoAssets,
         netWorthHistory: parsed.netWorthHistory || [],
         lastStockUpdate: parsed.lastStockUpdate || new Date().toISOString(),
+        recurringRolledOver: parsed.recurringRolledOver || [],
+        incomeHistory: parsed.incomeHistory || [],
+        categoryLimits: parsed.categoryLimits || {},
       }
     }
   } catch {}
@@ -34,6 +37,9 @@ function loadState(): AppState {
     assets: demoAssets,
     netWorthHistory: [],
     lastStockUpdate: new Date().toISOString(),
+    recurringRolledOver: [],
+    incomeHistory: [],
+    categoryLimits: {},
   }
 }
 
@@ -170,6 +176,9 @@ export function useStore() {
         assets: demoAssets,
         netWorthHistory: [],
         lastStockUpdate: new Date().toISOString(),
+        recurringRolledOver: [],
+        incomeHistory: [],
+        categoryLimits: {},
       }
       globalState = fresh
       saveState(fresh)

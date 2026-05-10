@@ -62,7 +62,7 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5174,
+    port: parseInt(process.env.PORT || '5174'),
     host: true, // allows access from phone on same WiFi
   },
 })

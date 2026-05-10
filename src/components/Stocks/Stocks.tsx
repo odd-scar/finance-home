@@ -48,7 +48,7 @@ function StockDetailChart({ stock }: { stock: Stock }) {
   return (
     <ResponsiveContainer width="100%" height={200}>
       <LineChart data={merged}>
-        <XAxis dataKey="day" tick={{ fill: '#9ca3af', fontSize: 10 }} axisLine={false} tickLine={false} />
+        <XAxis dataKey="day" tick={{ fill: '#9ca3af', fontSize: 10 }} axisLine={false} tickLine={false} label={{ value: 'Trading Days', position: 'insideBottom', offset: -2, fill: '#6b7280', fontSize: 10 }} height={36} />
         <YAxis tick={{ fill: '#9ca3af', fontSize: 10 }} axisLine={false} tickLine={false} domain={['auto', 'auto']} tickFormatter={v => `$${v}`} />
         <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v: number, name: string) => [formatCurrency(v), name === 'trend' ? 'Trend' : 'Price']} />
         <Line type="monotone" dataKey="price" stroke="#6366f1" strokeWidth={2} dot={false} name="Price" />
@@ -66,6 +66,9 @@ export function Stocks() {
   const [addOpen, setAddOpen] = useState(false)
   const [selected, setSelected] = useState<Stock | null>(null)
   const [form, setForm] = useState({ symbol: '', shares: '', purchasePrice: '', watchlist: false })
+
+  // Always derive from live store so modal stays current after price refresh or delete
+  const selectedStock = selected ? stocks.find(s => s.id === selected.id) ?? null : null
 
   const ownedStocks = stocks.filter(s => !s.watchlist && s.shares > 0)
   const watchlistStocks = stocks.filter(s => s.watchlist)
@@ -499,34 +502,34 @@ export function Stocks() {
       </Modal>
 
       {/* Stock Detail Modal */}
-      <Modal open={!!selected} onClose={() => setSelected(null)} title={selected ? `${selected.symbol} — ${selected.name}` : ''} size="lg">
-        {selected && (
+      <Modal open={!!selectedStock} onClose={() => setSelected(null)} title={selectedStock ? `${selectedStock.symbol} — ${selectedStock.name}` : ''} size="lg">
+        {selectedStock && (
           <div className="space-y-4">
             <div className="grid grid-cols-3 gap-3">
               <div className="bg-gray-800 rounded-xl p-3 text-center">
                 <p className="text-xs text-gray-400">Current Price</p>
-                <p className="font-bold text-white">{formatCurrency(selected.currentPrice)}</p>
+                <p className="font-bold text-white">{formatCurrency(selectedStock.currentPrice)}</p>
               </div>
               <div className="bg-gray-800 rounded-xl p-3 text-center">
                 <p className="text-xs text-gray-400">Avg Cost</p>
-                <p className="font-bold text-white">{formatCurrency(selected.purchasePrice)}</p>
+                <p className="font-bold text-white">{formatCurrency(selectedStock.purchasePrice)}</p>
               </div>
-              <div className={`rounded-xl p-3 text-center ${pctChange(selected) >= 0 ? 'bg-emerald-500/15' : 'bg-rose-500/15'}`}>
+              <div className={`rounded-xl p-3 text-center ${pctChange(selectedStock) >= 0 ? 'bg-emerald-500/15' : 'bg-rose-500/15'}`}>
                 <p className="text-xs text-gray-400">Total Return</p>
-                <p className={`font-bold ${pctChange(selected) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                  {formatPercent(pctChange(selected))}
+                <p className={`font-bold ${pctChange(selectedStock) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {formatPercent(pctChange(selectedStock))}
                 </p>
               </div>
             </div>
             <div>
               <p className="text-xs text-gray-500 mb-2">Price History + Linear Trend</p>
-              <StockDetailChart stock={selected} />
+              <StockDetailChart stock={selectedStock} />
             </div>
             <div className="bg-gray-800 rounded-xl p-3">
               <p className="text-xs text-gray-400 mb-2">Trend Prediction — next 5 data points</p>
               {(() => {
-                const reg = linearRegression(selected.priceHistory)
-                const n = selected.priceHistory.length
+                const reg = linearRegression(selectedStock.priceHistory)
+                const n = selectedStock.priceHistory.length
                 return (
                   <div className="flex gap-3">
                     {[1, 2, 3, 4, 5].map(i => {
@@ -534,7 +537,7 @@ export function Stocks() {
                       return (
                         <div key={i} className="flex-1 text-center">
                           <p className="text-xs text-gray-500">+{i}</p>
-                          <p className={`text-sm font-medium ${p >= selected.currentPrice ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          <p className={`text-sm font-medium ${p >= selectedStock.currentPrice ? 'text-emerald-400' : 'text-rose-400'}`}>
                             {formatCurrency(p)}
                           </p>
                         </div>
