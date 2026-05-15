@@ -10,11 +10,11 @@ import { refreshStockPrices, addStock, removeStock, updateStock } from '../../st
 import { Modal } from '../ui/Modal'
 import { Button, Input, FormField } from '../ui/FormField'
 import { Card } from '../ui/Card'
-import { LineChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis, PieChart, Pie, Cell, Legend } from 'recharts'
+import { LineChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis, PieChart, Pie, Cell } from 'recharts'
 import {
   Plus, Trash2, TrendingUp, TrendingDown,
   Star, AlertTriangle, CheckCircle, Clock,
-  RefreshCw, Loader2,
+  RefreshCw, Loader2, Edit2,
 } from 'lucide-react'
 import { v4 as uuid } from 'uuid'
 import { Stock } from '../../types'
@@ -66,24 +66,39 @@ export function Stocks() {
   const [addOpen, setAddOpen] = useState(false)
   const [selected, setSelected] = useState<Stock | null>(null)
   const [form, setForm] = useState({ symbol: '', shares: '', purchasePrice: '', watchlist: false })
+  // Move watchlist stock to portfolio
+  const [moveStock, setMoveStock] = useState<Stock | null>(null)
+  const [moveForm, setMoveForm] = useState({ shares: '', purchasePrice: '' })
+  // Edit an existing holding's shares / purchase price
+  const [editStock, setEditStock] = useState<Stock | null>(null)
+  const [editStockForm, setEditStockForm] = useState({ shares: '', purchasePrice: '' })
 
-  // Always derive from live store so modal stays current after price refresh or delete
+  // Always derive from live store so detail modal stays current after a price refresh
   const selectedStock = selected ? stocks.find(s => s.id === selected.id) ?? null : null
 
   const ownedStocks = stocks.filter(s => !s.watchlist && s.shares > 0)
   const watchlistStocks = stocks.filter(s => s.watchlist)
 
   const totalValue = ownedStocks.reduce((s, st) => s + st.shares * st.currentPrice, 0)
-  const totalCost = ownedStocks.reduce((s, st) => s + st.shares * st.purchasePrice, 0)
-  const totalGain = totalValue - totalCost
+  const totalCost  = ownedStocks.reduce((s, st) => s + st.shares * st.purchasePrice, 0)
+  const totalGain  = totalValue - totalCost
   const totalGainPct = calcPctChange(totalCost, totalValue)
 
-  // Portfolio allocation pie data
+  // Build pie data in stable order (same as ownedStocks order)
   const pieData = ownedStocks.map(st => ({
     symbol: st.symbol,
     value: st.shares * st.currentPrice,
     pct: totalValue > 0 ? ((st.shares * st.currentPrice) / totalValue) * 100 : 0,
   }))
+
+  // Stable color map: symbol → hex color, keyed on original pieData order so
+  // the legend and the pie slices always share the same color for each stock.
+  const pieColorMap = new Map<string, string>(
+    pieData.map((item, i) => [item.symbol, PIE_COLORS[i % PIE_COLORS.length]])
+  )
+
+  // Sorted copy for the legend — does NOT mutate pieData so pie slice colors stay stable
+  const pieDataSorted = [...pieData].sort((a, b) => b.value - a.value)
 
   const handleRefreshReal = async (force = false) => {
     setRefreshing(true)
@@ -106,23 +121,13 @@ export function Stocks() {
     setRefreshing(false)
   }
 
-  const handleRefreshSimulated = () => {
-    setRefreshing(true)
-    setTimeout(() => {
-      refreshStockPrices(simulateRefresh(stocks))
-      setRefreshing(false)
-    }, 600)
-  }
-
-  // Cooldown countdown — ticks down 1s at a time
+  // Cooldown countdown
   useEffect(() => {
     if (cooldown <= 0) return
     const timer = setTimeout(() => setCooldown(c => c - 1), 1000)
     return () => clearTimeout(timer)
   }, [cooldown])
 
-  // Manual refresh triggered by the button — forces a live price fetch,
-  // falls back to simulated ±fluctuation if the API is unavailable
   const handleManualRefresh = async () => {
     if (cooldown > 0 || refreshing) return
     setCooldown(60)
@@ -130,7 +135,7 @@ export function Stocks() {
     setFetchStatus(null)
     const symbols = stocks.map(s => s.symbol)
     try {
-      const { quotes, status } = await fetchQuotes(symbols, true) // force bypass cache
+      const { quotes, status } = await fetchQuotes(symbols, true)
       setFetchStatus(status)
       const updates = stocks
         .filter(s => quotes[s.symbol])
@@ -142,12 +147,10 @@ export function Stocks() {
       if (updates.length > 0) {
         refreshStockPrices(updates)
       } else {
-        // No live prices returned — apply simulated fluctuation (±0.5–2%)
         refreshStockPrices(simulateRefresh(stocks))
         setFetchStatus({ success: [], cached: [], failed: symbols, rateLimited: false })
       }
     } catch {
-      // API unreachable — fall back to simulation
       refreshStockPrices(simulateRefresh(stocks))
       setFetchStatus({ success: [], cached: [], failed: symbols, rateLimited: false })
     }
@@ -186,8 +189,7 @@ export function Stocks() {
     ? new Date(lastStockUpdate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     : null
 
-  // Auto-fetch prices when the tab opens — fetchQuotes handles the 1hr cache
-  // internally so this won't hit the API on every render, only when stale
+  // Auto-fetch on tab open (fetchQuotes handles the 1hr cache internally)
   useEffect(() => {
     if (stocks.length > 0) handleRefreshReal(false)
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -250,7 +252,7 @@ export function Stocks() {
           <h3 className="font-semibold text-white">Portfolio Holdings</h3>
         </div>
 
-        {/* Desktop table — hidden on mobile */}
+        {/* Desktop table */}
         <div className="hidden sm:block overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -300,13 +302,24 @@ export function Stocks() {
                       <Sparkline data={stock.priceHistory.slice(-13)} positive={allTimePct >= 0} />
                     </td>
                     <td className="px-4 py-3">
-                      <button
-                        type="button"
-                        onClick={e => { e.stopPropagation(); removeStock(stock.id) }}
-                        className="p-1.5 rounded-lg hover:bg-rose-500/20 text-gray-600 hover:text-rose-400 transition-colors"
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                      <div className="flex gap-1">
+                        <button
+                          type="button"
+                          onClick={e => { e.stopPropagation(); setEditStock(stock); setEditStockForm({ shares: String(stock.shares), purchasePrice: String(stock.purchasePrice) }) }}
+                          className="p-1.5 rounded-lg hover:bg-brand-500/20 text-gray-600 hover:text-brand-400 transition-colors"
+                          title="Edit position"
+                        >
+                          <Edit2 size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={e => { e.stopPropagation(); removeStock(stock.id) }}
+                          className="p-1.5 rounded-lg hover:bg-rose-500/20 text-gray-600 hover:text-rose-400 transition-colors"
+                          title="Remove"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 )
@@ -318,7 +331,7 @@ export function Stocks() {
           )}
         </div>
 
-        {/* Mobile card list — visible only on small screens */}
+        {/* Mobile card list */}
         <div className="block sm:hidden divide-y divide-gray-800">
           {ownedStocks.map(stock => {
             const value = stock.shares * stock.currentPrice
@@ -344,13 +357,23 @@ export function Stocks() {
                   </p>
                   <p className="text-xs text-gray-500">{formatCurrency(value)}</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={e => { e.stopPropagation(); removeStock(stock.id) }}
-                  className="p-1.5 rounded-lg hover:bg-rose-500/20 text-gray-600 hover:text-rose-400 transition-colors shrink-0"
-                >
-                  <Trash2 size={14} />
-                </button>
+                <div className="flex gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={e => { e.stopPropagation(); setEditStock(stock); setEditStockForm({ shares: String(stock.shares), purchasePrice: String(stock.purchasePrice) }) }}
+                    className="p-1.5 rounded-lg hover:bg-brand-500/20 text-gray-600 hover:text-brand-400 transition-colors"
+                    title="Edit position"
+                  >
+                    <Edit2 size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={e => { e.stopPropagation(); removeStock(stock.id) }}
+                    className="p-1.5 rounded-lg hover:bg-rose-500/20 text-gray-600 hover:text-rose-400 transition-colors"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </div>
             )
           })}
@@ -378,8 +401,8 @@ export function Stocks() {
                     innerRadius={50}
                     paddingAngle={2}
                   >
-                    {pieData.map((_, index) => (
-                      <Cell key={index} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                    {pieData.map((item) => (
+                      <Cell key={item.symbol} fill={pieColorMap.get(item.symbol)!} />
                     ))}
                   </Pie>
                   <Tooltip
@@ -394,28 +417,26 @@ export function Stocks() {
             </div>
             <div className="flex-1 w-full">
               <div className="space-y-2">
-                {pieData
-                  .sort((a, b) => b.value - a.value)
-                  .map((item, index) => (
-                    <div key={item.symbol} className="flex items-center gap-3">
+                {pieDataSorted.map((item) => (
+                  <div key={item.symbol} className="flex items-center gap-3">
+                    <div
+                      className="w-3 h-3 rounded-full shrink-0"
+                      style={{ backgroundColor: pieColorMap.get(item.symbol) }}
+                    />
+                    <span className="text-sm font-medium text-white w-12 sm:w-14 shrink-0">{item.symbol}</span>
+                    <div className="flex-1 min-w-0 h-1.5 bg-gray-800 rounded-full overflow-hidden">
                       <div
-                        className="w-3 h-3 rounded-full shrink-0"
-                        style={{ backgroundColor: PIE_COLORS[ownedStocks.findIndex(s => s.symbol === item.symbol) % PIE_COLORS.length] }}
+                        className="h-1.5 rounded-full"
+                        style={{
+                          width: `${item.pct}%`,
+                          backgroundColor: pieColorMap.get(item.symbol),
+                        }}
                       />
-                      <span className="text-sm font-medium text-white w-12 sm:w-14 shrink-0">{item.symbol}</span>
-                      <div className="flex-1 min-w-0 h-1.5 bg-gray-800 rounded-full overflow-hidden">
-                        <div
-                          className="h-1.5 rounded-full"
-                          style={{
-                            width: `${item.pct}%`,
-                            backgroundColor: PIE_COLORS[ownedStocks.findIndex(s => s.symbol === item.symbol) % PIE_COLORS.length],
-                          }}
-                        />
-                      </div>
-                      <span className="text-xs text-gray-400 w-9 sm:w-10 text-right shrink-0">{item.pct.toFixed(1)}%</span>
-                      <span className="text-xs text-gray-500 w-16 sm:w-20 text-right shrink-0">{formatCurrency(item.value, true)}</span>
                     </div>
-                  ))}
+                    <span className="text-xs text-gray-400 w-9 sm:w-10 text-right shrink-0">{item.pct.toFixed(1)}%</span>
+                    <span className="text-xs text-gray-500 w-16 sm:w-20 text-right shrink-0">{formatCurrency(item.value, true)}</span>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
@@ -455,7 +476,7 @@ export function Stocks() {
                 <button
                   type="button"
                   className="mt-3 w-full text-xs py-1.5 bg-brand-600/20 hover:bg-brand-600/40 text-brand-400 rounded-lg transition-colors"
-                  onClick={() => updateStock(stock.id, { watchlist: false })}
+                  onClick={() => { setMoveStock(stock); setMoveForm({ shares: '', purchasePrice: '' }) }}
                 >
                   Move to Portfolio
                 </button>
@@ -468,13 +489,17 @@ export function Stocks() {
         </div>
       </div>
 
-
-      {/* Add Stock Modal */}
+      {/* ── Add Stock Modal ───────────────────────────────────────────── */}
       <Modal
         open={addOpen}
         onClose={() => { setAddOpen(false); setForm({ symbol: '', shares: '', purchasePrice: '', watchlist: false }) }}
         title="Add Stock"
-        footer={<div className="flex gap-3"><Button variant="secondary" onClick={() => { setAddOpen(false); setForm({ symbol: '', shares: '', purchasePrice: '', watchlist: false }) }} className="flex-1">Cancel</Button><Button onClick={handleAdd} className="flex-1">Add</Button></div>}
+        footer={
+          <div className="flex gap-3">
+            <Button variant="secondary" onClick={() => { setAddOpen(false); setForm({ symbol: '', shares: '', purchasePrice: '', watchlist: false }) }} className="flex-1">Cancel</Button>
+            <Button onClick={handleAdd} className="flex-1">Add</Button>
+          </div>
+        }
       >
         <div className="space-y-4">
           <FormField label="Ticker Symbol">
@@ -501,7 +526,126 @@ export function Stocks() {
         </div>
       </Modal>
 
-      {/* Stock Detail Modal */}
+      {/* ── Move to Portfolio Modal ───────────────────────────────────── */}
+      <Modal
+        open={!!moveStock}
+        onClose={() => setMoveStock(null)}
+        title={moveStock ? `Add ${moveStock.symbol} to Portfolio` : ''}
+        footer={
+          <div className="flex gap-3">
+            <Button variant="secondary" onClick={() => setMoveStock(null)} className="flex-1">Cancel</Button>
+            <Button
+              className="flex-1"
+              onClick={() => {
+                if (!moveStock) return
+                const shares = parseFloat(moveForm.shares)
+                if (!shares || shares <= 0) return
+                const purchasePrice = parseFloat(moveForm.purchasePrice) || moveStock.currentPrice
+                updateStock(moveStock.id, { watchlist: false, shares, purchasePrice })
+                setMoveStock(null)
+              }}
+            >
+              Add to Portfolio
+            </Button>
+          </div>
+        }
+      >
+        {moveStock && (
+          <div className="space-y-4">
+            <p className="text-sm text-gray-400">
+              Enter how many shares of <strong className="text-white">{moveStock.symbol}</strong> you own and what you paid.
+            </p>
+            <FormField label="Number of Shares">
+              <Input
+                type="number"
+                placeholder="0"
+                value={moveForm.shares}
+                onChange={e => setMoveForm(f => ({ ...f, shares: e.target.value }))}
+                autoFocus
+              />
+            </FormField>
+            <FormField label="Purchase Price per Share ($)" hint="Leave blank to use current price">
+              <Input
+                type="number"
+                placeholder={moveStock.currentPrice.toFixed(2)}
+                value={moveForm.purchasePrice}
+                onChange={e => setMoveForm(f => ({ ...f, purchasePrice: e.target.value }))}
+              />
+            </FormField>
+          </div>
+        )}
+      </Modal>
+
+      {/* ── Edit Position Modal ───────────────────────────────────────── */}
+      <Modal
+        open={!!editStock}
+        onClose={() => setEditStock(null)}
+        title={editStock ? `Edit ${editStock.symbol} Position` : ''}
+        footer={
+          <div className="flex gap-3">
+            <Button variant="secondary" onClick={() => setEditStock(null)} className="flex-1">Cancel</Button>
+            <Button
+              className="flex-1"
+              onClick={() => {
+                if (!editStock) return
+                const shares = parseFloat(editStockForm.shares)
+                if (!shares || shares <= 0) return
+                const purchasePrice = parseFloat(editStockForm.purchasePrice) || editStock.purchasePrice
+                updateStock(editStock.id, { shares, purchasePrice })
+                setEditStock(null)
+              }}
+            >
+              Save Changes
+            </Button>
+          </div>
+        }
+      >
+        {editStock && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-3 p-3 bg-gray-800 rounded-xl">
+              <div>
+                <p className="text-sm font-semibold text-white">{editStock.symbol}</p>
+                <p className="text-xs text-gray-400">{editStock.name}</p>
+              </div>
+              <div className="ml-auto text-right">
+                <p className="text-sm font-semibold text-white">{formatCurrency(editStock.currentPrice)}</p>
+                <p className="text-xs text-gray-400">current price</p>
+              </div>
+            </div>
+            <FormField label="Number of Shares">
+              <Input
+                type="number"
+                placeholder="0"
+                value={editStockForm.shares}
+                onChange={e => setEditStockForm(f => ({ ...f, shares: e.target.value }))}
+                autoFocus
+              />
+            </FormField>
+            <FormField label="Average Purchase Price per Share ($)">
+              <Input
+                type="number"
+                placeholder={editStock.purchasePrice.toFixed(2)}
+                value={editStockForm.purchasePrice}
+                onChange={e => setEditStockForm(f => ({ ...f, purchasePrice: e.target.value }))}
+              />
+            </FormField>
+            {editStockForm.shares && editStockForm.purchasePrice && (
+              <div className="p-3 bg-gray-800/60 rounded-xl text-xs text-gray-400">
+                <div className="flex justify-between mb-1">
+                  <span>Total cost basis</span>
+                  <span className="text-white">{formatCurrency(parseFloat(editStockForm.shares) * parseFloat(editStockForm.purchasePrice))}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Current value</span>
+                  <span className="text-white">{formatCurrency(parseFloat(editStockForm.shares) * editStock.currentPrice)}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
+
+      {/* ── Stock Detail Modal ────────────────────────────────────────── */}
       <Modal open={!!selectedStock} onClose={() => setSelected(null)} title={selectedStock ? `${selectedStock.symbol} — ${selectedStock.name}` : ''} size="lg">
         {selectedStock && (
           <div className="space-y-4">

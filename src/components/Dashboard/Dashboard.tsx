@@ -229,6 +229,12 @@ export function Dashboard() {
     .reduce((sum, s) => sum + s.shares * s.purchasePrice, 0)
   const netWorth = totalSavings + portfolioValue + totalAssets - totalDebt
 
+  const monthlyBillsCost = bills.reduce((s, b) => {
+    if (b.frequency === 'monthly') return s + b.amount
+    if (b.frequency === 'quarterly') return s + b.amount / 3
+    return s + b.amount / 12
+  }, 0)
+
   // Emergency fund ratio
   const emergencySavings = savings
     .filter(a => a.category === 'emergency')
@@ -241,7 +247,7 @@ export function Dashboard() {
     const exp = budget
       .filter(b => b.month === m && b.year === y && b.type === 'expense')
       .reduce((s, b) => s + b.amount, 0)
-    if (exp > 0) last3MonthsExpenses.push(exp)
+    if (exp + monthlyBillsCost > 0) last3MonthsExpenses.push(exp + monthlyBillsCost)
   }
   const avgMonthlyExpenses = last3MonthsExpenses.length > 0
     ? last3MonthsExpenses.reduce((s, v) => s + v, 0) / last3MonthsExpenses.length
@@ -266,6 +272,7 @@ export function Dashboard() {
   const monthBudget = budget.filter(b => b.month === curM && b.year === curY)
   const income = monthBudget.filter(b => b.type === 'income').reduce((s, b) => s + b.amount, 0)
   const expenses = monthBudget.filter(b => b.type === 'expense').reduce((s, b) => s + b.amount, 0)
+  const totalExpenses = expenses + monthlyBillsCost
 
   // Recent 6 months budget
   const budgetTrend = []
@@ -279,7 +286,7 @@ export function Dashboard() {
     budgetTrend.push({
       label: d.toLocaleString('en-US', { month: 'short' }),
       income: inc,
-      expenses: exp,
+      expenses: exp + monthlyBillsCost,
     })
   }
 
@@ -574,20 +581,20 @@ export function Dashboard() {
                 </div>
                 <span className="text-sm text-white">Expenses</span>
               </div>
-              <span className="font-semibold text-rose-400">{formatCurrency(expenses)}</span>
+              <span className="font-semibold text-rose-400">{formatCurrency(totalExpenses)}</span>
             </div>
             <div className="flex items-center justify-between p-3 bg-gray-800 rounded-xl">
               <span className="text-sm text-gray-300">Net</span>
-              <span className={`font-bold ${income - expenses >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                {income - expenses >= 0 ? '+' : ''}{formatCurrency(income - expenses)}
+              <span className={`font-bold ${income - totalExpenses >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                {income - totalExpenses >= 0 ? '+' : ''}{formatCurrency(income - totalExpenses)}
               </span>
             </div>
             <div className="mt-2">
               <div className="flex justify-between text-xs text-gray-500 mb-1">
                 <span>Savings rate</span>
-                <span>{income > 0 ? Math.max(0, (((income - expenses) / income) * 100)).toFixed(0) : 0}%</span>
+                <span>{income > 0 ? Math.max(0, (((income - totalExpenses) / income) * 100)).toFixed(0) : 0}%</span>
               </div>
-              <ProgressBar value={Math.max(0, income - expenses)} max={Math.max(1, income)} color="bg-emerald-500" />
+              <ProgressBar value={Math.max(0, income - totalExpenses)} max={Math.max(1, income)} color="bg-emerald-500" />
             </div>
           </div>
         </div>
@@ -612,6 +619,9 @@ export function Dashboard() {
               </div>
             )
           })}
+          {debts.length === 0 && (
+            <p className="text-sm text-gray-500 py-2">No debts tracked. Add your loans and credit cards in the Debt tab.</p>
+          )}
         </div>
       </div>
 
