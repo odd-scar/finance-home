@@ -48,3 +48,29 @@ export function clearSession(): void {
 export function isSessionActive(): boolean {
   return !!sessionStorage.getItem(SESSION_KEY)
 }
+
+// ── App quick-lock ─────────────────────────────────────────────────────────
+// The PIN is a convenience lock on top of the account login (like a banking app):
+// it guards the screen on a shared device. Only an "unlocked" flag is kept for
+// the tab session — never the PIN itself.
+const UNLOCKED_KEY = '__fh_unlocked'
+
+export function markUnlocked(): void {
+  try { sessionStorage.setItem(UNLOCKED_KEY, '1') } catch { /* storage unavailable */ }
+}
+
+export function isUnlocked(): boolean {
+  try { return sessionStorage.getItem(UNLOCKED_KEY) === '1' } catch { return false }
+}
+
+export function clearUnlocked(): void {
+  try {
+    sessionStorage.removeItem(UNLOCKED_KEY)
+    sessionStorage.removeItem(SESSION_KEY) // legacy: older builds kept the raw PIN here
+  } catch { /* storage unavailable */ }
+}
+
+/** Auto-lock after the app has been in the background this long */
+export const AUTO_LOCK_MS = 5 * 60 * 1000
+/** Wrong PIN attempts before falling back to the account password */
+export const MAX_PIN_ATTEMPTS = 5

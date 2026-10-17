@@ -19,6 +19,8 @@ import { supabase } from './utils/supabase'
 import type { User } from './utils/supabase'
 import { DollarSign, Loader2, Plus, TrendingUp, Receipt, Target } from 'lucide-react'
 import { WelcomeTour, ONBOARDING_KEY } from './components/Onboarding/WelcomeTour'
+import { LockScreen } from './components/Lock/LockScreen'
+import { hasPinSet, isUnlocked, markUnlocked, clearUnlocked, removePin, AUTO_LOCK_MS } from './utils/auth'
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard')
@@ -30,6 +32,29 @@ export default function App() {
   const [authLoading, setAuthLoading]   = useState(true)
   const [dataLoading, setDataLoading]   = useState(false)
   const [passwordRecovery, setPasswordRecovery] = useState(false)
+  // Optional PIN quick-lock on top of the account login
+  const [locked, setLocked] = useState(() => hasPinSet() && !isUnlocked())
+
+  const lockApp = () => {
+    if (!hasPinSet()) return
+    clearUnlocked()
+    setLocked(true)
+  }
+
+  // Auto-lock after the app has been in the background for a while
+  useEffect(() => {
+    let hiddenAt: number | null = null
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        hiddenAt = Date.now()
+      } else if (hiddenAt !== null) {
+        if (Date.now() - hiddenAt >= AUTO_LOCK_MS) lockApp()
+        hiddenAt = null
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => document.removeEventListener('visibilitychange', onVisibility)
+  }, [])
 
   useEffect(() => {
     // Single source of truth: onAuthStateChange handles ALL session events.
@@ -47,6 +72,11 @@ export default function App() {
       // ── Session established (initial load or explicit sign-in) ───────
       if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
         setPasswordRecovery(false)
+        // Typing the account password is a stronger check than the PIN — no need to ask again
+        if (event === 'SIGNED_IN' && session?.user) {
+          markUnlocked()
+          setLocked(false)
+        }
         if (session?.user) {
           setUser(session.user)
           setDataLoading(true)
@@ -66,6 +96,9 @@ export default function App() {
       // ── Sign-out ──────────────────────────────────────────────────────
       if (event === 'SIGNED_OUT') {
         signOutCleanup()
+        removePin()
+        clearUnlocked()
+        setLocked(false)
         setUser(null)
         setPasswordRecovery(false)
         setAuthLoading(false)
@@ -85,6 +118,10 @@ export default function App() {
     await supabase.auth.signOut()
     setSupabaseUser(null)
     signOutCleanup()
+    // The PIN belongs to this device + account; the next person signing in sets their own
+    removePin()
+    clearUnlocked()
+    setLocked(false)
     setUser(null)
   }
 
@@ -134,11 +171,19 @@ const content: Record<Tab, React.ReactNode> = {
     </div>
   )
 
+  if (locked) return (
+    <LockScreen
+      userEmail={user.email}
+      onUnlock={() => { markUnlocked(); setLocked(false) }}
+      onSignOut={handleSignOut}
+    />
+  )
+
   return (
     <div className="flex min-h-screen bg-gray-950 text-white font-sans">
       <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
       <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
-        <Header activeTab={activeTab} userEmail={user.email} onSignOut={handleSignOut} />
+        <Header activeTab={activeTab} userEmail={user.email} onSignOut={handleSignOut} onLock={lockApp} />
         <main className="flex-1 overflow-y-auto pb-16 lg:pb-0" style={{ paddingBottom: 'calc(52px + env(safe-area-inset-bottom))' }}>
           {content[activeTab]}
         </main>

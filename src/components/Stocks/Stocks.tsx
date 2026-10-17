@@ -4,7 +4,7 @@ import { formatCurrency, formatPercent, calcPctChange, linearRegression } from '
 import { simulateRefresh, getStockInfo, generatePriceHistory } from '../../utils/mockStockData'
 import {
   fetchQuotes, getCacheAge,
-  type FetchStatus,
+  type FetchStatus, type QuoteResult,
 } from '../../utils/alphaVantage'
 import { refreshStockPrices, addStock, removeStock, updateStock } from '../../store/store'
 import { Modal } from '../ui/Modal'
@@ -100,6 +100,27 @@ export function Stocks() {
   // Sorted copy for the legend — does NOT mutate pieData so pie slice colors stay stable
   const pieDataSorted = [...pieData].sort((a, b) => b.value - a.value)
 
+  // Turn live quotes into store updates. A quote for the same trading day we already
+  // recorded replaces the last history point instead of appending a duplicate, so
+  // re-opening the tab or hitting refresh doesn't distort the chart or day change.
+  const buildQuoteUpdates = (quotes: Record<string, QuoteResult | null>) =>
+    stocks.flatMap(s => {
+      const q = quotes[s.symbol]
+      if (!q || !(q.price > 0)) return []
+      const sameDay = s.lastQuoteDay === q.latestTradingDay
+      if (sameDay && s.currentPrice === q.price && s.dayChangePct === q.changePercent) return []
+      const priceHistory = sameDay && s.priceHistory.length > 0
+        ? [...s.priceHistory.slice(0, -1), q.price]
+        : [...s.priceHistory.slice(1), q.price]
+      return [{
+        id: s.id,
+        currentPrice: q.price,
+        priceHistory,
+        lastQuoteDay: q.latestTradingDay,
+        dayChangePct: q.changePercent,
+      }]
+    })
+
   const handleRefreshReal = async (force = false) => {
     setRefreshing(true)
     setFetchStatus(null)
@@ -107,13 +128,7 @@ export function Stocks() {
     try {
       const { quotes, status } = await fetchQuotes(symbols, force)
       setFetchStatus(status)
-      const updates = stocks
-        .filter(s => quotes[s.symbol])
-        .map(s => {
-          const q = quotes[s.symbol]!
-          const newHistory = [...s.priceHistory.slice(1), q.price]
-          return { id: s.id, currentPrice: q.price, priceHistory: newHistory }
-        })
+      const updates = buildQuoteUpdates(quotes)
       if (updates.length > 0) refreshStockPrices(updates)
     } catch {
       setFetchStatus({ success: [], cached: [], failed: symbols, rateLimited: false })
@@ -137,42 +152,44 @@ export function Stocks() {
     try {
       const { quotes, status } = await fetchQuotes(symbols, true)
       setFetchStatus(status)
-      const updates = stocks
-        .filter(s => quotes[s.symbol])
-        .map(s => {
-          const q = quotes[s.symbol]!
-          const newHistory = [...s.priceHistory.slice(1), q.price]
-          return { id: s.id, currentPrice: q.price, priceHistory: newHistory }
-        })
+      const updates = buildQuoteUpdates(quotes)
       if (updates.length > 0) {
         refreshStockPrices(updates)
-      } else {
+      } else if (status.success.length === 0 && import.meta.env.DEV) {
+        // Local dev has no /api/quote — simulate so the UI can be exercised.
+        // Never in production: that would overwrite real holdings with made-up prices.
         refreshStockPrices(simulateRefresh(stocks))
-        setFetchStatus({ success: [], cached: [], failed: symbols, rateLimited: false })
       }
     } catch {
-      refreshStockPrices(simulateRefresh(stocks))
       setFetchStatus({ success: [], cached: [], failed: symbols, rateLimited: false })
     }
     setRefreshing(false)
   }
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!form.symbol) return
     const sym = form.symbol.toUpperCase().trim()
     const info = getStockInfo(sym)
+    // Use a live quote for the price (and default cost basis) when available —
+    // the mock price is a random number for any ticker it doesn't know.
+    let live: QuoteResult | null = null
+    try {
+      live = (await fetchQuotes([sym], true)).quotes[sym] ?? null
+    } catch { /* offline — fall back to mock */ }
+    const currentPrice = live && live.price > 0 ? live.price : info.currentPrice
     const shares = parseFloat(form.shares) || 0
-    const purchasePrice = parseFloat(form.purchasePrice) || info.currentPrice
+    const purchasePrice = parseFloat(form.purchasePrice) || currentPrice
     const stock: Stock = {
       id: uuid(),
       symbol: sym,
       name: info.name,
       shares,
       purchasePrice,
-      currentPrice: info.currentPrice,
-      priceHistory: generatePriceHistory(sym, info.currentPrice),
+      currentPrice,
+      priceHistory: generatePriceHistory(sym, currentPrice),
       watchlist: form.watchlist || shares === 0,
       addedAt: new Date().toISOString(),
+      ...(live && live.price > 0 ? { lastQuoteDay: live.latestTradingDay, dayChangePct: live.changePercent } : {}),
     }
     addStock(stock)
     setForm({ symbol: '', shares: '', purchasePrice: '', watchlist: false })
@@ -181,6 +198,7 @@ export function Stocks() {
 
   const pctChange = (s: Stock) => calcPctChange(s.purchasePrice, s.currentPrice)
   const dayChange = (s: Stock) => {
+    if (s.dayChangePct !== undefined) return s.dayChangePct
     const h = s.priceHistory
     return h.length >= 2 ? calcPctChange(h[h.length - 2], h[h.length - 1]) : 0
   }

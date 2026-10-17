@@ -10,16 +10,26 @@ const STORAGE_KEY = 'finance-home-data'
 let _encKey: string | null = null
 
 // ── Supabase sync ──────────────────────────────────────────────────────────
+const LAST_USER_KEY = 'finance-home-user'
 let _supabaseUserId: string | null = null
 let _syncTimer: ReturnType<typeof setTimeout> | null = null
+/** User whose cloud state has been loaded into memory this session */
+let _cloudLoadedFor: string | null = null
+/**
+ * Pushing to the cloud is only allowed once we know what's in memory is really this
+ * user's data — otherwise a failed/timed-out load would upload an empty (or demo)
+ * state over their saved data on the next commit.
+ */
+let _syncEnabled = false
 
 export function setSupabaseUser(userId: string | null) {
   _supabaseUserId = userId
+  if (!userId) { _syncEnabled = false; _cloudLoadedFor = null }
 }
 
 /** Debounced — fires 2 s after the last commit to avoid hammering the API */
 function scheduleSyncToSupabase() {
-  if (!_supabaseUserId) return
+  if (!_supabaseUserId || !_syncEnabled) return
   if (_syncTimer) clearTimeout(_syncTimer)
   _syncTimer = setTimeout(async () => {
     if (!_supabaseUserId) return
@@ -42,11 +52,26 @@ function scheduleSyncToSupabase() {
  * gets pushed up automatically on the next commit.
  */
 export async function loadFromSupabase(userId: string): Promise<void> {
-  _supabaseUserId = userId
+  // Supabase re-fires SIGNED_IN (e.g. when the tab regains focus). Reloading then
+  // would replace in-memory edits that haven't synced yet with the older cloud copy.
+  if (_cloudLoadedFor === userId) return
 
-  // Clear any stale local data from a previous user's session before we load
-  // cloud data — prevents a brief flash of the wrong person's data.
-  try { localStorage.removeItem(STORAGE_KEY) } catch { /* quota */ }
+  _supabaseUserId = userId
+  _syncEnabled = false
+
+  // A local copy is only trusted if it belongs to this same user
+  let sameUserCache = false
+  try {
+    sameUserCache = localStorage.getItem(LAST_USER_KEY) === userId && !!localStorage.getItem(STORAGE_KEY)
+  } catch { /* storage unavailable */ }
+
+  if (!sameUserCache) {
+    // Clear any stale local data from a previous user's session before we load
+    // cloud data — prevents a brief flash of the wrong person's data.
+    try { localStorage.removeItem(STORAGE_KEY) } catch { /* quota */ }
+    state = emptyState()
+    listeners.forEach(fn => fn())
+  }
 
   try {
     // Race against a 10 s timeout so a paused/slow Supabase project never
@@ -63,7 +88,11 @@ export async function loadFromSupabase(userId: string): Promise<void> {
 
     const { data, error } = await Promise.race([fetchPromise, timeoutPromise])
 
-    if (!error && data?.state) {
+    // A query error (RLS, paused project, network) is NOT "new user" — treating it
+    // that way would push an empty state over the user's real cloud data.
+    if (error) throw error
+
+    if (data?.state) {
       // Existing user — restore their cloud state exactly as saved.
       // Fall back to empty arrays (never demo data) for any missing keys
       // so old records without a field don't accidentally show demo content.
@@ -99,19 +128,32 @@ export async function loadFromSupabase(userId: string): Promise<void> {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
       } catch { /* quota */ }
       listeners.forEach(fn => fn())
+      _syncEnabled = true
       scheduleSyncToSupabase()
     }
-  } catch {
-    // Network error — run on whatever state is already in memory
+    try { localStorage.setItem(LAST_USER_KEY, userId) } catch { /* quota */ }
+    _cloudLoadedFor = userId
+    _syncEnabled = true
+  } catch (err) {
+    console.warn('Could not load cloud data:', err)
+    // Offline / timed out. If we have this user's own cached copy, keep working on it
+    // and sync as usual. Otherwise leave sync off for this session so an empty state
+    // never overwrites what's saved in the cloud; the next sign-in event retries.
+    if (sameUserCache) _syncEnabled = true
   }
 }
 
 export function signOutCleanup() {
   _supabaseUserId = null
+  _cloudLoadedFor = null
+  _syncEnabled = false
   if (_syncTimer) { clearTimeout(_syncTimer); _syncTimer = null }
   // Wipe local storage so the next user logging in on this device
   // never briefly sees the previous user's data.
-  try { localStorage.removeItem(STORAGE_KEY) } catch { /* quota */ }
+  try {
+    localStorage.removeItem(STORAGE_KEY)
+    localStorage.removeItem(LAST_USER_KEY)
+  } catch { /* quota */ }
   state = emptyState()
   listeners.forEach(fn => fn())
 }
@@ -176,15 +218,17 @@ function loadState(): AppState {
     }
 
     const parsed = JSON.parse(jsonStr)
+    // Saved data exists — never mix demo records into a real user's data
+    // (a key missing from an older save just means "none yet").
     return {
-      stocks: parsed.stocks || demoStocks,
-      debts: parsed.debts || demoDebts,
-      savings: parsed.savings || demoSavings,
-      goals: parsed.goals || demoGoals,
-      trips: parsed.trips || demoTrips,
-      budget: parsed.budget || demoBudget,
-      bills: parsed.bills || demoBills,
-      assets: parsed.assets || demoAssets,
+      stocks: parsed.stocks || [],
+      debts: parsed.debts || [],
+      savings: parsed.savings || [],
+      goals: parsed.goals || [],
+      trips: parsed.trips || [],
+      budget: parsed.budget || [],
+      bills: parsed.bills || [],
+      assets: parsed.assets || [],
       netWorthHistory: parsed.netWorthHistory || [],
       lastStockUpdate: parsed.lastStockUpdate || new Date().toISOString(),
       recurringRolledOver: parsed.recurringRolledOver || [],
@@ -237,13 +281,17 @@ export const updateStock = (id: string, updates: Partial<Stock>) =>
   commit(s => ({ ...s, stocks: s.stocks.map(st => (st.id === id ? { ...st, ...updates } : st)) }))
 export const removeStock = (id: string) =>
   commit(s => ({ ...s, stocks: s.stocks.filter(st => st.id !== id) }))
-export const refreshStockPrices = (updates: { id: string; currentPrice: number; priceHistory: number[] }[]) =>
+export const refreshStockPrices = (
+  updates: ({ id: string; currentPrice: number; priceHistory: number[] } & Partial<Pick<Stock, 'lastQuoteDay' | 'dayChangePct'>>)[]
+) =>
   commit(s => ({
     ...s,
     lastStockUpdate: new Date().toISOString(),
     stocks: s.stocks.map(st => {
       const u = updates.find(u => u.id === st.id)
-      return u ? { ...st, currentPrice: u.currentPrice, priceHistory: u.priceHistory } : st
+      if (!u) return st
+      const { id: _id, ...fields } = u
+      return { ...st, ...fields }
     }),
   }))
 
@@ -347,10 +395,18 @@ export function rolloverRecurringEntries(month: number, year: number) {
   const monthKey = `${year}-${String(month).padStart(2, '0')}`
   if (state.recurringRolledOver.includes(monthKey)) return
 
-  let prevMonth = month - 1, prevYear = year
-  if (prevMonth < 1) { prevMonth = 12; prevYear-- }
+  // Source = the most recent earlier month that has any entries. Looking only at the
+  // immediately previous month meant one skipped month (or browsing ahead to a future
+  // month, which marks it rolled over) dropped every recurring entry for good.
+  const targetIdx = year * 12 + (month - 1)
+  const sourceIdx = state.budget
+    .map(b => b.year * 12 + (b.month - 1))
+    .filter(i => i < targetIdx && i >= targetIdx - 24)
+    .reduce((best, i) => Math.max(best, i), -1)
+  const prevMonth = (sourceIdx % 12) + 1
+  const prevYear = Math.floor(sourceIdx / 12)
 
-  const recurringFromPrev = state.budget.filter(
+  const recurringFromPrev = sourceIdx < 0 ? [] : state.budget.filter(
     b => b.month === prevMonth && b.year === prevYear && b.recurring
   )
 

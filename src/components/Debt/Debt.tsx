@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useAppStore } from '../../hooks/useAppStore'
-import { formatCurrency, calcDebtPayoff, debtAvalancheOrder, debtSnowballOrder } from '../../utils/finance'
+import { formatCurrency, debtAvalancheOrder, debtSnowballOrder, simulateDebtPayoff } from '../../utils/finance'
 import { addDebt, removeDebt, updateDebt } from '../../store/store'
 import { Modal } from '../ui/Modal'
 import { Button, Input, FormField, Select } from '../ui/FormField'
@@ -77,7 +77,7 @@ export function DebtTracker() {
       name: form.name,
       type: form.type,
       balance: parseFloat(form.balance) || 0,
-      originalBalance: parseFloat(form.originalBalance) || 0,
+      originalBalance: parseFloat(form.originalBalance) || parseFloat(form.balance) || 0,
       interestRate: parseFloat(form.interestRate) || 0,
       minimumPayment: parseFloat(form.minimumPayment) || 0,
     })
@@ -98,56 +98,18 @@ export function DebtTracker() {
 
   // Payoff strategies
   const orderedDebts = strategy === 'avalanche' ? debtAvalancheOrder(debts) : debtSnowballOrder(debts)
-  const totalPayment = totalMin + extraPayment
 
-  // Payoff timeline for all debts combined (simplified: pay minimums on all, extra to priority)
-  const payoffComparison = (() => {
-    const avDebts = debtAvalancheOrder(debts).map(d => ({ ...d }))
-    const sbDebts = debtSnowballOrder(debts).map(d => ({ ...d }))
+  // Full simulation: minimums on everything, extra + freed-up minimums roll down the priority list
+  const payoffComparison = {
+    avalanche: simulateDebtPayoff(debts, extraPayment, 'avalanche'),
+    snowball: simulateDebtPayoff(debts, extraPayment, 'snowball'),
+  }
+  const activePlan = payoffComparison[strategy]
+  const fmtMonths = (p: { months: number; paidOff: boolean }) =>
+    p.paidOff ? `${p.months}mo` : 'Never (payments < interest)'
 
-    let avMonths = 0, avInterest = 0
-    let avRemaining = avDebts.map(d => ({ ...d }))
-    while (avRemaining.some(d => d.balance > 0.01) && avMonths < 600) {
-      avMonths++
-      let extra = extraPayment
-      for (const d of avRemaining) {
-        if (d.balance <= 0) continue
-        const interest = d.balance * (d.interestRate / 100 / 12)
-        avInterest += interest
-        const pay = Math.min(d.balance + interest, d.minimumPayment + (avRemaining[0].id === d.id ? extra : 0))
-        d.balance = Math.max(0, d.balance + interest - pay)
-        if (d.balance < 0.01 && avRemaining[0].id === d.id) extra += d.minimumPayment
-      }
-    }
-
-    let sbMonths = 0, sbInterest = 0
-    let sbRemaining = sbDebts.map(d => ({ ...d }))
-    while (sbRemaining.some(d => d.balance > 0.01) && sbMonths < 600) {
-      sbMonths++
-      let extra = extraPayment
-      for (const d of sbRemaining) {
-        if (d.balance <= 0) continue
-        const interest = d.balance * (d.interestRate / 100 / 12)
-        sbInterest += interest
-        const pay = Math.min(d.balance + interest, d.minimumPayment + (sbRemaining[0].id === d.id ? extra : 0))
-        d.balance = Math.max(0, d.balance + interest - pay)
-        if (d.balance < 0.01 && sbRemaining[0].id === d.id) extra += d.minimumPayment
-      }
-    }
-
-    return {
-      avalanche: { months: avMonths, interest: Math.round(avInterest) },
-      snowball: { months: sbMonths, interest: Math.round(sbInterest) },
-    }
-  })()
-
-  // Individual payoff chart for selected debt (first in order)
-  const primaryDebt = orderedDebts[0]
-  const payoffData = primaryDebt
-    ? calcDebtPayoff(primaryDebt.balance, primaryDebt.interestRate, primaryDebt.minimumPayment + extraPayment)
-        .schedule.filter((_, i) => i % 3 === 0 || i === 0)
-        .map(s => ({ month: s.month, balance: s.balance }))
-    : []
+  // Total-debt payoff timeline for the selected strategy
+  const payoffData = activePlan.schedule.filter((s, i, arr) => i % 3 === 0 || i === arr.length - 1)
 
   const debtFormJsx = (
     <div className="space-y-4">
@@ -202,7 +164,9 @@ export function DebtTracker() {
         </div>
         <div className="divide-y divide-gray-800">
           {debts.map(debt => {
-            const paidPct = debt.originalBalance > 0 ? ((debt.originalBalance - debt.balance) / debt.originalBalance) * 100 : 0
+            const paidPct = debt.originalBalance > 0
+              ? Math.min(100, Math.max(0, ((debt.originalBalance - debt.balance) / debt.originalBalance) * 100))
+              : 0
             return (
               <div key={debt.id} className="flex items-start gap-3 px-4 py-4 sm:px-5 sm:gap-4">
                 <div className="p-2.5 bg-gray-800 rounded-xl shrink-0">
@@ -265,7 +229,14 @@ export function DebtTracker() {
                 >
                   <p className="font-medium text-white text-sm">Avalanche</p>
                   <p className="text-xs text-gray-400 mt-0.5">Pay highest rate first</p>
-                  <p className="text-xs text-emerald-400 mt-1">{payoffComparison.avalanche.months}mo · saves {formatCurrency(Math.max(0, payoffComparison.snowball.interest - payoffComparison.avalanche.interest), true)} interest</p>
+                  <p className="text-xs text-emerald-400 mt-1">
+                    {fmtMonths(payoffComparison.avalanche)}
+                    {payoffComparison.avalanche.paidOff && payoffComparison.snowball.paidOff &&
+                      ` · saves ${formatCurrency(Math.max(0, payoffComparison.snowball.totalInterest - payoffComparison.avalanche.totalInterest), true)} interest`}
+                  </p>
+                  {payoffComparison.avalanche.paidOff && (
+                    <p className="text-xs text-gray-500">{formatCurrency(payoffComparison.avalanche.totalInterest, true)} total interest</p>
+                  )}
                 </button>
                 <button
                   type="button"
@@ -274,7 +245,13 @@ export function DebtTracker() {
                 >
                   <p className="font-medium text-white text-sm">Snowball</p>
                   <p className="text-xs text-gray-400 mt-0.5">Pay smallest balance first</p>
-                  <p className="text-xs text-sky-400 mt-1">{payoffComparison.snowball.months}mo · motivating wins</p>
+                  <p className="text-xs text-sky-400 mt-1">
+                    {fmtMonths(payoffComparison.snowball)}
+                    {payoffComparison.snowball.paidOff && ' · motivating wins'}
+                  </p>
+                  {payoffComparison.snowball.paidOff && (
+                    <p className="text-xs text-gray-500">{formatCurrency(payoffComparison.snowball.totalInterest, true)} total interest</p>
+                  )}
                 </button>
               </div>
               <div className="bg-gray-800 rounded-xl p-3 space-y-2">
@@ -290,7 +267,7 @@ export function DebtTracker() {
             </div>
             <div>
               <p className="text-xs text-gray-400 mb-2">
-                {primaryDebt?.name} payoff timeline (extra {formatCurrency(extraPayment)}/mo applied)
+                Total debt payoff timeline — {strategy} ({formatCurrency(totalMin + extraPayment)}/mo total)
               </p>
               <ResponsiveContainer width="100%" height={200}>
                 <AreaChart data={payoffData}>

@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useAppStore } from '../../hooks/useAppStore'
 import { formatCurrency } from '../../utils/finance'
+import { monthTotals } from '../../utils/budgetMath'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from 'recharts'
@@ -185,7 +186,7 @@ function calcDebtPayoff(balance: number, annualRate: number, monthlyPayment: num
 type Section = 'checklist' | 'concepts' | 'calculators' | 'tips'
 
 export function Learn() {
-  const { savings, debts, stocks, budget } = useAppStore()
+  const { savings, debts, stocks, budget, assets, bills } = useAppStore()
 
   const [activeSection, setActiveSection] = useState<Section>('checklist')
   const [checkedItems, setCheckedItems] = useState<Set<string>>(() => {
@@ -232,9 +233,7 @@ export function Learn() {
     .filter(s => s.category === 'emergency')
     .reduce((sum, s) => sum + s.balance, 0)
 
-  const monthlyExpenses = budget
-    .filter(b => b.month === curMonth && b.year === curYear && b.type === 'expense')
-    .reduce((sum, b) => sum + b.amount, 0)
+  const monthlyExpenses = monthTotals(budget, bills, curMonth, curYear).expenses
 
   const portfolioStocks = stocks.filter(s => !s.watchlist)
   const portfolioValue = portfolioStocks.reduce((sum, s) => sum + s.shares * s.currentPrice, 0)
@@ -274,7 +273,7 @@ export function Learn() {
 
   // ── Net worth snapshot ─────────────────────────────────────────────────
   const savingsTotal = savings.reduce((s, a) => s + a.balance, 0)
-  const assetsTotal  = useAppStore().assets.reduce((s, a) => s + a.value, 0)
+  const assetsTotal  = assets.reduce((s, a) => s + a.value, 0)
   const debtsTotal   = debts.reduce((s, d) => s + d.balance, 0)
   const netWorth     = savingsTotal + portfolioValue + assetsTotal - debtsTotal
 

@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useAppStore } from '../../hooks/useAppStore'
-import { formatCurrency, calcPctChange, formatPercent } from '../../utils/finance'
+import { formatCurrency, calcPctChange, formatPercent, daysUntilDueDay, parseLocalDate } from '../../utils/finance'
 import { StatCard } from '../ui/Card'
 import { ProgressBar } from '../ui/ProgressBar'
 import { snapshotNetWorth, autoSnapshotIfNeeded } from '../../store/store'
+import { monthTotals, expensesByCategory } from '../../utils/budgetMath'
 import { PaycheckOverridePanel } from '../PaycheckOverride/PaycheckOverridePanel'
 import {
   TrendingUp, CreditCard, PiggyBank, Target, Wallet,
@@ -20,16 +21,11 @@ interface BillAlert {
 }
 
 function getBillsDueSoon(bills: Bill[], daysAhead = 7): BillAlert[] {
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
   const results: BillAlert[] = []
 
   for (const bill of bills) {
     if (bill.frequency !== 'monthly') continue
-    const thisMonth = new Date(today.getFullYear(), today.getMonth(), bill.dueDay)
-    const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, bill.dueDay)
-    const dueDate = thisMonth >= today ? thisMonth : nextMonth
-    const daysUntilDue = Math.round((dueDate.getTime() - today.getTime()) / 86_400_000)
+    const daysUntilDue = daysUntilDueDay(bill.dueDay)
     if (daysUntilDue <= daysAhead) results.push({ bill, daysUntilDue })
   }
 
@@ -45,15 +41,15 @@ interface BudgetAlert {
 
 function getBudgetAlerts(
   budget: BudgetEntry[],
+  bills: Bill[],
   categoryLimits: Record<string, number>,
   month: number,
   year: number,
 ): BudgetAlert[] {
+  const byCategory = expensesByCategory(budget, bills, month, year)
   return Object.entries(categoryLimits)
     .map(([category, limit]) => {
-      const spent = budget
-        .filter(b => b.month === month && b.year === year && b.type === 'expense' && b.category === category)
-        .reduce((s, b) => s + b.amount, 0)
+      const spent = byCategory[category] ?? 0
       return { category, spent, limit, pct: limit > 0 ? spent / limit : 0 }
     })
     .filter(a => a.pct >= 0.7)
@@ -73,7 +69,7 @@ function getGoalAlerts(goals: FinancialGoal[]): GoalAlert[] {
     .filter(g => g.targetDate && g.currentAmount < g.targetAmount)
     .map(g => {
       const start = new Date(g.addedAt)
-      const end = new Date(g.targetDate)
+      const end = parseLocalDate(g.targetDate)
       const totalMs = Math.max(1, end.getTime() - start.getTime())
       const elapsedMs = today.getTime() - start.getTime()
       const expectedPct = Math.min(1, Math.max(0, elapsedMs / totalMs))
@@ -214,7 +210,7 @@ export function Dashboard() {
 
   // Attention data
   const billAlerts   = getBillsDueSoon(bills)
-  const budgetAlerts = getBudgetAlerts(budget, categoryLimits, curM, curY)
+  const budgetAlerts = getBudgetAlerts(budget, bills, categoryLimits, curM, curY)
   const goalAlerts   = getGoalAlerts(goals)
 
   // Totals
@@ -229,25 +225,17 @@ export function Dashboard() {
     .reduce((sum, s) => sum + s.shares * s.purchasePrice, 0)
   const netWorth = totalSavings + portfolioValue + totalAssets - totalDebt
 
-  const monthlyBillsCost = bills.reduce((s, b) => {
-    if (b.frequency === 'monthly') return s + b.amount
-    if (b.frequency === 'quarterly') return s + b.amount / 3
-    return s + b.amount / 12
-  }, 0)
-
   // Emergency fund ratio
   const emergencySavings = savings
     .filter(a => a.category === 'emergency')
     .reduce((s, a) => s + a.balance, 0)
-  // Average monthly expenses from last 3 months of budget
+  // Average monthly expenses (budget entries + bills) over the last 3 months that have data
   const last3MonthsExpenses: number[] = []
   for (let i = 1; i <= 3; i++) {
     const m = curM - i <= 0 ? curM - i + 12 : curM - i
     const y = curM - i <= 0 ? curY - 1 : curY
-    const exp = budget
-      .filter(b => b.month === m && b.year === y && b.type === 'expense')
-      .reduce((s, b) => s + b.amount, 0)
-    if (exp + monthlyBillsCost > 0) last3MonthsExpenses.push(exp + monthlyBillsCost)
+    const exp = monthTotals(budget, bills, m, y).expenses
+    if (exp > 0) last3MonthsExpenses.push(exp)
   }
   const avgMonthlyExpenses = last3MonthsExpenses.length > 0
     ? last3MonthsExpenses.reduce((s, v) => s + v, 0) / last3MonthsExpenses.length
@@ -255,44 +243,44 @@ export function Dashboard() {
   const emergencyMonths = avgMonthlyExpenses > 0 ? emergencySavings / avgMonthlyExpenses : 0
   const emergencyTarget = 6
 
-  // Savings trend (last 6 months)
-  const savingsTrend = savings
-    .flatMap(a => a.history)
-    .reduce((acc, h) => {
-      const found = acc.find(x => x.month === h.month)
-      if (found) found.balance += h.balance
-      else acc.push({ month: h.month, balance: h.balance })
-      return acc
-    }, [] as { month: string; balance: number }[])
-    .sort((a, b) => a.month.localeCompare(b.month))
+  // Savings trend (last 6 months). An account with no snapshot for a month carries
+  // its last known balance forward — otherwise skipping an update looks like a withdrawal.
+  const trendMonths = [...new Set(savings.flatMap(a => a.history.map(h => h.month)))].sort()
+  const savingsTrend = trendMonths
+    .map(month => ({
+      month,
+      balance: savings.reduce((sum, a) => {
+        const latest = a.history
+          .filter(h => h.month <= month)
+          .sort((x, y) => x.month.localeCompare(y.month))
+          .pop()
+        return sum + (latest?.balance ?? 0)
+      }, 0),
+    }))
     .slice(-6)
     .map(x => ({ ...x, label: x.month.slice(5) + '/' + x.month.slice(2, 4) }))
 
   // Budget overview (current month)
-  const monthBudget = budget.filter(b => b.month === curM && b.year === curY)
-  const income = monthBudget.filter(b => b.type === 'income').reduce((s, b) => s + b.amount, 0)
-  const expenses = monthBudget.filter(b => b.type === 'expense').reduce((s, b) => s + b.amount, 0)
-  const totalExpenses = expenses + monthlyBillsCost
+  const { income, expenses: totalExpenses } = monthTotals(budget, bills, curM, curY)
 
   // Recent 6 months budget
   const budgetTrend = []
   for (let i = 5; i >= 0; i--) {
     const m = curM - i <= 0 ? curM - i + 12 : curM - i
     const y = curM - i <= 0 ? curY - 1 : curY
-    const entries = budget.filter(b => b.month === m && b.year === y)
-    const inc = entries.filter(b => b.type === 'income').reduce((s, b) => s + b.amount, 0)
-    const exp = entries.filter(b => b.type === 'expense').reduce((s, b) => s + b.amount, 0)
+    const t = monthTotals(budget, bills, m, y)
     const d = new Date(y, m - 1, 1)
     budgetTrend.push({
       label: d.toLocaleString('en-US', { month: 'short' }),
-      income: inc,
-      expenses: exp + monthlyBillsCost,
+      income: t.income,
+      expenses: t.expenses,
     })
   }
 
   // Top goals
+  const priorityRank = { high: 0, medium: 1, low: 2 }
   const topGoals = [...goals]
-    .sort((a, b) => (b.priority === 'high' ? 1 : 0) - (a.priority === 'high' ? 1 : 0))
+    .sort((a, b) => priorityRank[a.priority] - priorityRank[b.priority])
     .slice(0, 4)
 
   const portfolioPct = calcPctChange(portfolioCost, portfolioValue)
@@ -605,7 +593,9 @@ export function Dashboard() {
         <h3 className="font-semibold text-white mb-4">Debt Snapshot</h3>
         <div className="space-y-3">
           {debts.map(debt => {
-            const paidOff = debt.originalBalance > 0 ? 1 - debt.balance / debt.originalBalance : 0
+            const paidOff = debt.originalBalance > 0
+              ? Math.min(1, Math.max(0, 1 - debt.balance / debt.originalBalance))
+              : 0
             return (
               <div key={debt.id} className="flex items-center gap-4">
                 <div className="flex-1 min-w-0">

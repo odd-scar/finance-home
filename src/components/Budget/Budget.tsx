@@ -20,6 +20,7 @@ import {
 import { v4 as uuid } from 'uuid'
 import { BudgetEntry } from '../../types'
 import { PaycheckOverridePanel } from '../PaycheckOverride/PaycheckOverridePanel'
+import { monthTotals, expensesByCategory } from '../../utils/budgetMath'
 
 const TOOLTIP_STYLE = {
   backgroundColor: '#1f2937', border: '1px solid #374151',
@@ -68,7 +69,7 @@ function fmtYM(ym: string): string {
 }
 
 export function Budget() {
-  const { budget, incomeHistory, categoryLimits } = useAppStore()
+  const { budget, bills, incomeHistory, categoryLimits } = useAppStore()
   const now = new Date()
   const [viewMonth, setViewMonth] = useState(now.getMonth() + 1)
   const [viewYear, setViewYear] = useState(now.getFullYear())
@@ -113,26 +114,25 @@ export function Budget() {
   }
 
   const monthEntries = budget.filter(b => b.month === viewMonth && b.year === viewYear)
-  const income = monthEntries.filter(b => b.type === 'income').reduce((s, b) => s + b.amount, 0)
-  const expenses = monthEntries.filter(b => b.type === 'expense').reduce((s, b) => s + b.amount, 0)
+  // Bills from the Bills tab count as expenses here too (same math as the Dashboard)
+  const { income, expenses, billExpenses, billItems } = monthTotals(budget, bills, viewMonth, viewYear)
   const net = income - expenses
   const pct = income > 0 ? Math.min(200, (expenses / income) * 100) : 0
+  const spentByCategory = expensesByCategory(budget, bills, viewMonth, viewYear)
 
   // Last 6 months trend
   const trendData = []
   for (let i = 5; i >= 0; i--) {
     let m = viewMonth - i, y = viewYear
     if (m < 1) { m += 12; y-- }
-    const entries = budget.filter(b => b.month === m && b.year === y)
-    const inc = entries.filter(b => b.type === 'income').reduce((s, b) => s + b.amount, 0)
-    const exp = entries.filter(b => b.type === 'expense').reduce((s, b) => s + b.amount, 0)
-    trendData.push({ label: monthLabel(m, y), income: inc, expenses: exp, net: inc - exp })
+    const t = monthTotals(budget, bills, m, y)
+    trendData.push({ label: monthLabel(m, y), income: t.income, expenses: t.expenses, net: t.income - t.expenses })
   }
 
   // Category breakdown
   const expByCategory = EXPENSE_CATS.map((cat, i) => ({
     name: cat,
-    value: monthEntries.filter(b => b.type === 'expense' && b.category === cat).reduce((s, b) => s + b.amount, 0),
+    value: spentByCategory[cat] ?? 0,
     color: expColors[i % expColors.length],
   })).filter(d => d.value > 0)
 
@@ -362,6 +362,9 @@ export function Budget() {
             <div>
               <p className="text-xs text-gray-500 mb-0.5 flex items-center gap-1"><TrendingDown size={11} className="text-rose-400" /> Expenses</p>
               <p className="text-sm font-bold text-rose-400">{formatCurrency(expenses)}</p>
+              {billExpenses > 0 && (
+                <p className="text-[11px] text-gray-500">incl. {formatCurrency(billExpenses)} bills</p>
+              )}
             </div>
           </div>
           <div className="text-right">
@@ -391,9 +394,7 @@ export function Budget() {
       {showLimits && (() => {
         // Build per-category rows: every expense category that has spend OR a limit
         const limitRows = EXPENSE_CATS.map(cat => {
-          const spent = monthEntries
-            .filter(b => b.type === 'expense' && b.category === cat)
-            .reduce((s, b) => s + b.amount, 0)
+          const spent = spentByCategory[cat] ?? 0
           const limit = categoryLimits[cat] ?? 0
           const pct = limit > 0 ? spent / limit : 0
           return { cat, spent, limit, pct }
@@ -720,6 +721,35 @@ export function Budget() {
           )}
         </div>
       </div>
+
+      {/* ── Bills counted this month ─────────────────────────────────── */}
+      {billItems.length > 0 && (
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+          <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-800">
+            <CalendarDays size={15} className="text-sky-400" />
+            <h3 className="font-semibold text-white flex-1">Bills this month</h3>
+            <span className="text-sm font-semibold text-rose-400">-{formatCurrency(billExpenses)}</span>
+          </div>
+          <div className="divide-y divide-gray-800">
+            {billItems.map(({ bill, category, amount }) => (
+              <div key={bill.id} className="flex items-center gap-3 px-4 py-3 sm:px-5">
+                <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: catColor(category) }} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-white truncate">{bill.name}</p>
+                  <p className="text-xs text-gray-500">
+                    {category}
+                    {bill.frequency !== 'monthly' && ` · ${formatCurrency(bill.amount)} ${bill.frequency}, set aside monthly`}
+                  </p>
+                </div>
+                <span className="text-sm font-semibold text-rose-400 shrink-0">-{formatCurrency(amount)}</span>
+              </div>
+            ))}
+          </div>
+          <p className="px-5 py-3 text-xs text-gray-600 border-t border-gray-800">
+            From your Bills tab. Logging a bill here as an expense with the same name counts it once.
+          </p>
+        </div>
+      )}
 
       {/* ── Income History ────────────────────────────────────────────── */}
       {sortedGroupKeys.length > 0 && (

@@ -10,6 +10,10 @@ export interface Stock {
   priceHistory: number[]
   watchlist?: boolean
   addedAt: string
+  /** Trading day (YYYY-MM-DD) of the last live quote applied — same-day refreshes replace instead of append */
+  lastQuoteDay?: string
+  /** Day change % from the last live quote */
+  dayChangePct?: number
 }
 
 export interface Debt {

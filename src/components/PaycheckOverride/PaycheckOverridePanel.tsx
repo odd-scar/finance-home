@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { X, Plus, Trash2, Zap, ChevronDown, ChevronUp } from 'lucide-react'
 import { useAppStore } from '../../hooks/useAppStore'
 import { formatCurrency } from '../../utils/finance'
+import { paycheckPlan, PAY_FREQUENCY_LABELS, type PayFrequency } from '../../utils/budgetMath'
 import { v4 as uuid } from 'uuid'
 
 interface OneTimeItem {
@@ -21,13 +22,25 @@ function parseDollar(s: string): number {
   return isNaN(n) ? 0 : n
 }
 
+const PAY_FREQ_KEY = 'finance-home-pay-frequency'
+
+function loadPayFrequency(): PayFrequency {
+  try {
+    const v = localStorage.getItem(PAY_FREQ_KEY)
+    if (v && v in PAY_FREQUENCY_LABELS) return v as PayFrequency
+  } catch { /* storage unavailable */ }
+  return 'biweekly'
+}
+
 export function PaycheckOverridePanel({ open, onClose }: PaycheckOverridePanelProps) {
   const { budget, bills, stocks, savings } = useAppStore()
 
-  // Derive default fixed expenses from monthly bills
-  const defaultFixed = bills
-    .filter(b => b.frequency === 'monthly')
-    .reduce((s, b) => s + b.amount, 0)
+  // What this paycheck has to cover — only bills due before the next paycheck,
+  // not the whole month's bills (which double-counts on a biweekly schedule)
+  const [payFreq, setPayFreq] = useState<PayFrequency>(loadPayFrequency)
+  const plan = paycheckPlan(bills, budget, payFreq)
+  const defaultFixed = plan.billsDueTotal + plan.sinkingFund
+  const defaultEveryday = plan.everydaySpending
 
   // Derive stock/savings allocation ratio from current portfolio split
   const portfolioValue = stocks
@@ -42,6 +55,7 @@ export function PaycheckOverridePanel({ open, onClose }: PaycheckOverridePanelPr
   // Panel state — reset when opened
   const [takeHome, setTakeHome] = useState('')
   const [fixedExp, setFixedExp] = useState(defaultFixed > 0 ? defaultFixed.toFixed(2) : '')
+  const [everydayExp, setEverydayExp] = useState(defaultEveryday > 0 ? defaultEveryday.toFixed(2) : '')
   const [oneTime, setOneTime] = useState<OneTimeItem[]>([])
   const [stocksRatio, setStocksRatio] = useState(derivedStocksRatio)
   const [showRatioEditor, setShowRatioEditor] = useState(false)
@@ -52,6 +66,7 @@ export function PaycheckOverridePanel({ open, onClose }: PaycheckOverridePanelPr
     if (open) {
       setTakeHome('')
       setFixedExp(defaultFixed > 0 ? defaultFixed.toFixed(2) : '')
+      setEverydayExp(defaultEveryday > 0 ? defaultEveryday.toFixed(2) : '')
       setOneTime([])
       setStocksRatio(derivedStocksRatio)
       setShowRatioEditor(false)
@@ -88,6 +103,16 @@ export function PaycheckOverridePanel({ open, onClose }: PaycheckOverridePanelPr
     }
   }, [open])
 
+  // Changing pay frequency re-derives the pre-filled amounts for the new period
+  const changePayFreq = (f: PayFrequency) => {
+    setPayFreq(f)
+    try { localStorage.setItem(PAY_FREQ_KEY, f) } catch { /* quota */ }
+    const p = paycheckPlan(bills, budget, f)
+    const fixed = p.billsDueTotal + p.sinkingFund
+    setFixedExp(fixed > 0 ? fixed.toFixed(2) : '')
+    setEverydayExp(p.everydaySpending > 0 ? p.everydaySpending.toFixed(2) : '')
+  }
+
   // One-time payment helpers
   const addOneTime = () =>
     setOneTime(prev => [...prev, { id: uuid(), label: '', amount: '' }])
@@ -101,8 +126,9 @@ export function PaycheckOverridePanel({ open, onClose }: PaycheckOverridePanelPr
   // Live calculation
   const takeHomeNum = parseDollar(takeHome)
   const fixedExpNum = parseDollar(fixedExp)
+  const everydayExpNum = parseDollar(everydayExp)
   const oneTimeTotal = oneTime.reduce((s, i) => s + parseDollar(i.amount), 0)
-  const remaining = takeHomeNum - fixedExpNum - oneTimeTotal
+  const remaining = takeHomeNum - fixedExpNum - everydayExpNum - oneTimeTotal
   const stocksAmt = remaining > 0 ? (remaining * stocksRatio) / 100 : 0
   const savingsAmt = remaining > 0 ? remaining - stocksAmt : 0
   const hasResult = takeHomeNum > 0
@@ -183,11 +209,33 @@ export function PaycheckOverridePanel({ open, onClose }: PaycheckOverridePanelPr
               </div>
             </div>
 
+            {/* Pay frequency */}
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-1.5">How often you're paid</label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                {(Object.keys(PAY_FREQUENCY_LABELS) as PayFrequency[]).map(f => (
+                  <button
+                    key={f}
+                    type="button"
+                    onClick={() => changePayFreq(f)}
+                    className={`px-2 py-2 rounded-lg text-xs font-medium border transition-colors ${
+                      payFreq === f
+                        ? 'bg-brand-600/25 border-brand-500/50 text-brand-300'
+                        : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    {PAY_FREQUENCY_LABELS[f]}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-gray-500 mt-1.5">This paycheck covers the next {plan.periodDays} days.</p>
+            </div>
+
             {/* Fixed expenses */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="text-sm font-medium text-gray-300">
-                  Fixed expenses this period
+                  Bills due before next paycheck
                 </label>
                 {defaultFixed > 0 && (
                   <span className="text-xs text-gray-500">pre-filled from bills</span>
@@ -205,6 +253,47 @@ export function PaycheckOverridePanel({ open, onClose }: PaycheckOverridePanelPr
                   style={{ fontSize: '16px' }}
                 />
               </div>
+              {(plan.billsDue.length > 0 || plan.sinkingFund > 0) && (
+                <div className="mt-2 space-y-1">
+                  {plan.billsDue.map(({ bill, daysUntilDue }) => (
+                    <div key={bill.id} className="flex justify-between text-xs text-gray-500">
+                      <span className="truncate">
+                        {bill.name} · {daysUntilDue === 0 ? 'due today' : `due in ${daysUntilDue}d`}
+                      </span>
+                      <span className="text-gray-400 shrink-0 ml-2">{formatCurrency(bill.amount)}</span>
+                    </div>
+                  ))}
+                  {plan.sinkingFund > 0 && (
+                    <div className="flex justify-between text-xs text-gray-500">
+                      <span>Set aside for quarterly/annual bills</span>
+                      <span className="text-gray-400 shrink-0 ml-2">{formatCurrency(plan.sinkingFund)}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Everyday spending */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-sm font-medium text-gray-300">Everyday spending this period</label>
+                {defaultEveryday > 0 && (
+                  <span className="text-xs text-gray-500">from recurring budget</span>
+                )}
+              </div>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-medium">$</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  value={everydayExp}
+                  onChange={e => setEverydayExp(e.target.value)}
+                  className="w-full pl-7 pr-4 py-2.5 bg-gray-800 border border-gray-700 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 rounded-xl text-white placeholder-gray-600 outline-none transition-colors text-base"
+                  style={{ fontSize: '16px' }}
+                />
+              </div>
+              <p className="text-xs text-gray-500 mt-1">Groceries, gas and other recurring costs, prorated to this pay period.</p>
             </div>
 
             {/* One-time payments */}
@@ -321,7 +410,7 @@ export function PaycheckOverridePanel({ open, onClose }: PaycheckOverridePanelPr
                 <div className="space-y-3">
                   {/* Remaining */}
                   <div className={`rounded-xl p-4 ${remaining >= 0 ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-rose-500/10 border border-rose-500/20'}`}>
-                    <p className="text-xs text-gray-400 mb-1">After expenses & one-time payments</p>
+                    <p className="text-xs text-gray-400 mb-1">After bills, everyday spending & one-time payments</p>
                     <p className={`text-2xl font-bold ${remaining >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                       {formatCurrency(remaining)} remaining
                     </p>

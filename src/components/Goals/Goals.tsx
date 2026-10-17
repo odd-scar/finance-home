@@ -210,7 +210,7 @@ export function Goals() {
               </div>
 
               {goal.targetDate && (
-                <div className={`flex items-center gap-2 mt-3 text-xs ${overdue ? 'text-rose-400' : days && days < 30 ? 'text-amber-400' : 'text-gray-500'}`}>
+                <div className={`flex items-center gap-2 mt-3 text-xs ${overdue ? 'text-rose-400' : days !== null && days < 30 ? 'text-amber-400' : 'text-gray-500'}`}>
                   {overdue ? <AlertCircle size={12} /> : <Calendar size={12} />}
                   {overdue
                     ? `Overdue by ${Math.abs(days!)} days`

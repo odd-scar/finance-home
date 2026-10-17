@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useAppStore } from '../../hooks/useAppStore'
-import { formatCurrency, formatDate } from '../../utils/finance'
+import { formatCurrency, formatDate, parseLocalDate, daysUntil } from '../../utils/finance'
 import { addTrip, removeTrip, updateTrip, addTripExpense, updateTripExpense, removeTripExpense } from '../../store/store'
 import { Modal } from '../ui/Modal'
 import { Button, Input, FormField, Select } from '../ui/FormField'
@@ -182,8 +182,9 @@ export function TripPlanner() {
             {trips.map(trip => {
               const totalBudgeted = trip.expenses.reduce((s, e) => s + e.budgeted, 0)
               const totalActual = trip.expenses.reduce((s, e) => s + e.actual, 0)
-              const days = Math.ceil((new Date(trip.endDate).getTime() - new Date(trip.startDate).getTime()) / (1000 * 60 * 60 * 24))
-              const isPast = new Date(trip.endDate) < new Date()
+              // Inclusive day count (Jun 1 → Jun 7 is a 7-day trip)
+              const days = Math.round((parseLocalDate(trip.endDate).getTime() - parseLocalDate(trip.startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1
+              const isPast = daysUntil(trip.endDate) < 0
               return (
                 <div
                   key={trip.id}

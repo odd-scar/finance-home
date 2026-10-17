@@ -44,7 +44,25 @@ export default async function handler(request: Request): Promise<Response> {
 
     const meta = result.meta
     const price = meta.regularMarketPrice ?? meta.previousClose ?? 0
-    const prevClose = meta.chartPreviousClose ?? meta.previousClose ?? price
+    // With range=5d, `chartPreviousClose` is the close *before the 5-day window*,
+    // not yesterday's close — using it reports a ~1-week change as the day change.
+    // Use the prior session's daily close instead.
+    const closes = result.indicators?.quote?.[0]?.close ?? []
+    const timestamps = result.timestamp ?? []
+    const lastBarDay = timestamps.length
+      ? new Date(timestamps[timestamps.length - 1] * 1000).toISOString().slice(0, 10)
+      : null
+    const marketDay = meta.regularMarketTime
+      ? new Date(meta.regularMarketTime * 1000).toISOString().slice(0, 10)
+      : null
+    // If the latest bar is the current session, yesterday is the one before it
+    let priorClose: number | undefined
+    const startIdx = lastBarDay && marketDay && lastBarDay === marketDay ? closes.length - 2 : closes.length - 1
+    for (let i = startIdx; i >= 0; i--) {
+      const c = closes[i]
+      if (typeof c === 'number' && c > 0) { priorClose = c; break }
+    }
+    const prevClose = meta.previousClose ?? priorClose ?? meta.chartPreviousClose ?? price
     const change = price - prevClose
     const changePercent = prevClose > 0 ? (change / prevClose) * 100 : 0
 
@@ -102,6 +120,10 @@ interface YahooChartResponse {
         previousClose?: number
         chartPreviousClose?: number
         regularMarketTime?: number
+      }
+      timestamp?: number[]
+      indicators?: {
+        quote?: Array<{ close?: Array<number | null> }>
       }
     }> | null
     error?: unknown

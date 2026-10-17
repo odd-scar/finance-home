@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Tab } from '../../types'
-import { LogOut } from 'lucide-react'
+import { LogOut, Lock } from 'lucide-react'
 import { Modal } from '../ui/Modal'
+import { SecuritySettings } from '../Lock/LockScreen'
 
 const titles: Record<Tab, string> = {
   dashboard: 'Dashboard',
@@ -33,6 +34,7 @@ interface HeaderProps {
   activeTab: Tab
   userEmail?: string
   onSignOut?: () => void
+  onLock?: () => void
 }
 
 /** Returns up to 2 uppercase initials from an email address */
@@ -43,8 +45,9 @@ function getInitials(email: string): string {
   return local.slice(0, 2).toUpperCase()
 }
 
-export function Header({ activeTab, userEmail, onSignOut }: HeaderProps) {
+export function Header({ activeTab, userEmail, onSignOut, onLock }: HeaderProps) {
   const [accountOpen, setAccountOpen] = useState(false)
+  const [securityOpen, setSecurityOpen] = useState(false)
 
 
   return (
@@ -91,12 +94,27 @@ export function Header({ activeTab, userEmail, onSignOut }: HeaderProps) {
           </div>
 
           <button
+            type="button"
+            onClick={() => { setAccountOpen(false); setSecurityOpen(true) }}
+            className="w-full flex items-center justify-center gap-2 py-3 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200 rounded-xl text-sm font-medium transition-colors"
+          >
+            <Lock size={15} /> PIN Lock
+          </button>
+
+          <button
             onClick={() => { setAccountOpen(false); onSignOut?.() }}
             className="w-full flex items-center justify-center gap-2 py-3 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-400 rounded-xl text-sm font-medium transition-colors"
           >
             <LogOut size={15} /> Sign Out
           </button>
         </div>
+      </Modal>
+
+      <Modal open={securityOpen} onClose={() => setSecurityOpen(false)} title="PIN Lock">
+        <SecuritySettings
+          onClose={() => setSecurityOpen(false)}
+          onLock={() => { setSecurityOpen(false); onLock?.() }}
+        />
       </Modal>
     </>
   )

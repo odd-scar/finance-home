@@ -35,7 +35,7 @@ function SavingsDetailModal({ account }: { account: SavingsAccount }) {
   const [editingNote, setEditingNote] = useState<string | null>(null)
   const [noteText, setNoteText] = useState('')
 
-  const projection = projectGrowth(account.balance, account.monthlyContribution, account.interestRate, 36)
+  const projection = projectGrowth(account.balance, account.monthlyContribution, account.interestRate, 36, true)
   const data = projection.filter((_, i) => i % 3 === 0 || i === projection.length - 1)
   const finalBalance = projection[projection.length - 1].balance
   const interestEarned = finalBalance - account.balance - account.monthlyContribution * 36

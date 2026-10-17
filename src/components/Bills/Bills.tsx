@@ -9,6 +9,9 @@ import {
 } from 'lucide-react'
 import { v4 as uuid } from 'uuid'
 import { Bill } from '../../types'
+import { formatCurrency, nextDueDate, daysUntilDueDay } from '../../utils/finance'
+
+const clampDueDay = (s: string) => Math.min(31, Math.max(1, parseInt(s) || 1))
 
 const CATEGORIES = ['housing', 'utilities', 'subscriptions', 'insurance', 'loan', 'transportation', 'other'] as const
 const FREQUENCIES = ['monthly', 'quarterly', 'annual'] as const
@@ -47,9 +50,7 @@ function CatIcon({ category, size = 14 }: { category: Bill['category']; size?: n
 }
 
 function buildGCalUrl(bill: Bill): string {
-  const now = new Date()
-  let due = new Date(now.getFullYear(), now.getMonth(), bill.dueDay)
-  if (due <= now) due = new Date(now.getFullYear(), now.getMonth() + 1, bill.dueDay)
+  const due = nextDueDate(bill.dueDay)
   const pad = (n: number) => String(n).padStart(2, '0')
   const dateStr = `${due.getFullYear()}${pad(due.getMonth() + 1)}${pad(due.getDate())}`
   const rrule = bill.frequency === 'monthly' ? 'RRULE:FREQ=MONTHLY'
@@ -58,13 +59,6 @@ function buildGCalUrl(bill: Bill): string {
   const text = encodeURIComponent(`${bill.name} — $${bill.amount} due`)
   const details = encodeURIComponent(`Bill: ${bill.name}\nAmount: $${bill.amount}\nFrequency: ${bill.frequency}${bill.notes ? '\nNote: ' + bill.notes : ''}`)
   return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${text}&details=${details}&dates=${dateStr}/${dateStr}&recur=${encodeURIComponent(rrule)}`
-}
-
-function daysUntilDue(dueDay: number): number {
-  const now = new Date()
-  let due = new Date(now.getFullYear(), now.getMonth(), dueDay)
-  if (due < now) due = new Date(now.getFullYear(), now.getMonth() + 1, dueDay)
-  return Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
 }
 
 const toMonthly = (amount: number, frequency: Bill['frequency']): number => {
@@ -106,7 +100,7 @@ export function Bills() {
       name: form.name,
       amount: parseFloat(form.amount) || 0,
       category: form.category,
-      dueDay: parseInt(form.dueDay) || 1,
+      dueDay: clampDueDay(form.dueDay),
       frequency: form.frequency,
       autoPay: form.autoPay,
       notes: form.notes || undefined,
@@ -123,7 +117,7 @@ export function Bills() {
       name: form.name,
       amount: parseFloat(form.amount) || 0,
       category: form.category,
-      dueDay: parseInt(form.dueDay) || 1,
+      dueDay: clampDueDay(form.dueDay),
       frequency: form.frequency,
       autoPay: form.autoPay,
       notes: form.notes || undefined,
@@ -226,11 +220,11 @@ export function Bills() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
           <p className="text-xs text-gray-400 mb-1">Monthly Total</p>
-          <p className="text-2xl font-bold text-white">${Math.round(totalMonthly).toLocaleString()}</p>
+          <p className="text-2xl font-bold text-white">{formatCurrency(totalMonthly)}</p>
         </div>
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
           <p className="text-xs text-gray-400 mb-1">Annual Total</p>
-          <p className="text-2xl font-bold text-white">${totalAnnual.toLocaleString()}</p>
+          <p className="text-2xl font-bold text-white">{formatCurrency(totalAnnual)}</p>
         </div>
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
           <p className="text-xs text-gray-400 mb-1">Bills Tracked</p>
@@ -261,7 +255,7 @@ export function Bills() {
         ) : (
           <div className="divide-y divide-gray-800">
             {sorted.map(bill => {
-              const days = daysUntilDue(bill.dueDay)
+              const days = daysUntilDueDay(bill.dueDay)
               const urgentClass = days <= 2
                 ? 'bg-red-500/20 text-red-400 border border-red-500/30'
                 : days <= 6
