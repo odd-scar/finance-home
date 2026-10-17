@@ -46,6 +46,23 @@ describe('monthTotals', () => {
   })
 })
 
+describe('fixed vs variable split', () => {
+  it('bills + recurring entries are fixed; logged one-off purchases are variable', () => {
+    const t = monthTotals(
+      [
+        entry('rec', { recurring: true, category: 'Subscriptions', description: 'Gym', amount: 50 }),
+        entry('coffee', { category: 'Starbucks', description: 'Latte', amount: 6.25, date: '2026-03-04' }),
+        entry('repair', { category: 'Transport', description: 'Tire', amount: 180 }),
+      ],
+      [bill('b1')],
+      3, 2026
+    )
+    expect(t.fixedExpenses).toBe(1550)
+    expect(t.variableExpenses).toBeCloseTo(186.25)
+    expect(t.fixedExpenses + t.variableExpenses).toBeCloseTo(t.expenses)
+  })
+})
+
 describe('expensesByCategory', () => {
   it('maps bills into budget categories (so spending limits include them)', () => {
     const by = expensesByCategory([entry('e1')], [bill('b1'), bill('u', { name: 'Electric', amount: 90, category: 'utilities' })], 3, 2026)

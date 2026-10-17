@@ -51,6 +51,12 @@ export function billsForMonth(bills: Bill[], budget: BudgetEntry[], month: numbe
     .map(b => ({ bill: b, category: BILL_TO_BUDGET_CATEGORY[b.category] ?? 'Other', amount: billMonthlyAmount(b) }))
 }
 
+/**
+ * Variable = one-off spending you log as it happens (coffee, a car repair).
+ * Fixed = recurring budget entries plus everything on the Bills tab.
+ */
+export const isVariableExpense = (e: BudgetEntry) => e.type === 'expense' && !e.recurring
+
 export interface MonthTotals {
   income: number
   /** Expenses from Budget entries */
@@ -59,6 +65,10 @@ export interface MonthTotals {
   billExpenses: number
   /** entryExpenses + billExpenses */
   expenses: number
+  /** Recurring expense entries + bills */
+  fixedExpenses: number
+  /** Non-recurring expense entries (the Spending log) */
+  variableExpenses: number
   billItems: BillItem[]
 }
 
@@ -67,9 +77,18 @@ export function monthTotals(budget: BudgetEntry[], bills: Bill[], month: number,
   const entries = budget.filter(b => b.month === month && b.year === year)
   const income = entries.filter(b => b.type === 'income').reduce((s, b) => s + b.amount, 0)
   const entryExpenses = entries.filter(b => b.type === 'expense').reduce((s, b) => s + b.amount, 0)
+  const variableExpenses = entries.filter(isVariableExpense).reduce((s, b) => s + b.amount, 0)
   const billItems = billsForMonth(bills, budget, month, year)
   const billExpenses = billItems.reduce((s, i) => s + i.amount, 0)
-  return { income, entryExpenses, billExpenses, expenses: entryExpenses + billExpenses, billItems }
+  return {
+    income,
+    entryExpenses,
+    billExpenses,
+    expenses: entryExpenses + billExpenses,
+    fixedExpenses: entryExpenses - variableExpenses + billExpenses,
+    variableExpenses,
+    billItems,
+  }
 }
 
 /** Expense total per budget category for a month, bills included */

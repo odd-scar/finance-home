@@ -24,8 +24,9 @@ import {
 } from '../finance'
 import {
   state, resetToDemo, addBudgetEntry, rolloverRecurringEntries,
-  loadFromSupabase, signOutCleanup, addGoal,
+  loadFromSupabase, signOutCleanup, addGoal, addCustomCategory, removeCustomCategory, flushSync,
 } from '../../store/store'
+import { clearAppCache } from '../appCache'
 import type { BudgetEntry } from '../../types'
 
 // ── debt payoff ──────────────────────────────────────────────────────────
@@ -171,12 +172,33 @@ describe('rolloverRecurringEntries', () => {
     expect(state.budget.some(b => b.month === 9 && b.year === 2092)).toBe(true)
   })
 
+  it('a month holding only logged purchases does not break the recurring chain', () => {
+    addBudgetEntry(entry('r4', 1, 2094))
+    // February: never opened in Budget, but a coffee was logged from Spending
+    addBudgetEntry(entry('coffee', 2, 2094, { type: 'expense', category: 'Starbucks', description: 'Latte', amount: 6, recurring: false }))
+    rolloverRecurringEntries(3, 2094)
+    expect(state.budget.some(b => b.month === 3 && b.year === 2094 && b.description === 'Paycheck')).toBe(true)
+  })
+
   it('a one-time override reverts in the next month', () => {
     addBudgetEntry(entry('r3', 4, 2093, { amount: 5000, thisMonthOverride: true, originalRecurringAmount: 4000 }))
     rolloverRecurringEntries(5, 2093)
     const may = state.budget.find(b => b.month === 5 && b.year === 2093)!
     expect(may.amount).toBe(4000)
     expect(may.thisMonthOverride).toBeUndefined()
+  })
+})
+
+describe('custom categories', () => {
+  beforeEach(() => resetToDemo())
+
+  it('adds trimmed, case-insensitively unique names and removes them', () => {
+    addCustomCategory('  Starbucks ')
+    addCustomCategory('starbucks')
+    addCustomCategory('')
+    expect(state.customCategories).toEqual(['Starbucks'])
+    removeCustomCategory('Starbucks')
+    expect(state.customCategories).toEqual([])
   })
 })
 
@@ -199,6 +221,30 @@ describe('loadFromSupabase', () => {
     await vi.advanceTimersByTimeAsync(3000)
     expect(supabaseResult.upsert).not.toHaveBeenCalled()
     vi.useRealTimers()
+  })
+
+  it('clear cache keeps local data when the cloud save cannot be confirmed', async () => {
+    vi.useRealTimers()
+    supabaseResult.current = { data: null, error: { message: 'offline' } }
+    await loadFromSupabase('user-c') // load fails → sync stays off
+    localStorage.setItem('finance-home-data', '{"goals":[]}')
+    localStorage.setItem('finance-home-stock-cache', '{}')
+    const { dataCleared } = await clearAppCache()
+    expect(dataCleared).toBe(false)
+    expect(localStorage.getItem('finance-home-data')).not.toBeNull()
+    expect(localStorage.getItem('finance-home-stock-cache')).toBeNull()
+  })
+
+  it('clear cache saves to the cloud first, then drops the local copy', async () => {
+    vi.useRealTimers()
+    supabaseResult.current = { data: { state: { goals: [] } }, error: null }
+    await loadFromSupabase('user-d')
+    expect(localStorage.getItem('finance-home-data')).not.toBeNull()
+    const { dataCleared } = await clearAppCache()
+    expect(dataCleared).toBe(true)
+    expect(supabaseResult.upsert).toHaveBeenCalledTimes(1)
+    expect(localStorage.getItem('finance-home-data')).toBeNull()
+    expect(await flushSync()).toBe(true) // still signed in and syncing
   })
 
   it('loads the saved cloud state and syncs normally afterwards', async () => {

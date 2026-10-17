@@ -27,23 +27,49 @@ export function setSupabaseUser(userId: string | null) {
   if (!userId) { _syncEnabled = false; _cloudLoadedFor = null }
 }
 
+/** Upload the current state. Resolves true only when the cloud confirmed the save. */
+async function pushToSupabase(): Promise<boolean> {
+  if (!_supabaseUserId || !_syncEnabled) return false
+  try {
+    const { error } = await supabase
+      .from('user_data')
+      .upsert(
+        { user_id: _supabaseUserId, state: state, updated_at: new Date().toISOString() },
+        { onConflict: 'user_id' }
+      )
+    if (error) { console.warn('Supabase sync failed:', error); return false }
+    return true
+  } catch (err) {
+    console.warn('Supabase sync failed (offline?):', err)
+    return false
+  }
+}
+
 /** Debounced — fires 2 s after the last commit to avoid hammering the API */
 function scheduleSyncToSupabase() {
   if (!_supabaseUserId || !_syncEnabled) return
   if (_syncTimer) clearTimeout(_syncTimer)
-  _syncTimer = setTimeout(async () => {
-    if (!_supabaseUserId) return
-    try {
-      await supabase
-        .from('user_data')
-        .upsert(
-          { user_id: _supabaseUserId, state: state, updated_at: new Date().toISOString() },
-          { onConflict: 'user_id' }
-        )
-    } catch (err) {
-      console.warn('Supabase sync failed (offline?):', err)
-    }
+  _syncTimer = setTimeout(() => {
+    _syncTimer = null
+    void pushToSupabase()
   }, 2000)
+}
+
+/**
+ * Save to the cloud right now (skipping the debounce). Use before reloading or
+ * clearing local data. Resolves false if the cloud copy can't be confirmed current.
+ */
+export async function flushSync(): Promise<boolean> {
+  if (_syncTimer) { clearTimeout(_syncTimer); _syncTimer = null }
+  return pushToSupabase()
+}
+
+/** Drop the on-device copy of the data; the next load pulls it fresh from the cloud. */
+export function clearLocalDataCache() {
+  try {
+    localStorage.removeItem(STORAGE_KEY)
+    localStorage.removeItem(LAST_USER_KEY)
+  } catch { /* storage unavailable */ }
 }
 
 /**
@@ -111,6 +137,7 @@ export async function loadFromSupabase(userId: string): Promise<void> {
         recurringRolledOver:   (cloud as AppState).recurringRolledOver ?? [],
         incomeHistory:         (cloud as AppState).incomeHistory       ?? [],
         categoryLimits:        (cloud as AppState).categoryLimits      ?? {},
+        customCategories:      (cloud as AppState).customCategories    ?? [],
       }
       // Persist locally so the app works offline after first load
       const json = JSON.stringify(state)
@@ -177,6 +204,7 @@ function defaultState(): AppState {
     recurringRolledOver: [],
     incomeHistory: [],
     categoryLimits: {},
+    customCategories: [],
   }
 }
 
@@ -196,6 +224,7 @@ function emptyState(): AppState {
     recurringRolledOver: [],
     incomeHistory: [],
     categoryLimits: {},
+    customCategories: [],
   }
 }
 
@@ -234,6 +263,7 @@ function loadState(): AppState {
       recurringRolledOver: parsed.recurringRolledOver || [],
       incomeHistory: parsed.incomeHistory || [],
       categoryLimits: parsed.categoryLimits || {},
+      customCategories: parsed.customCategories || [],
     }
   } catch {
     return defaultState()
@@ -399,7 +429,10 @@ export function rolloverRecurringEntries(month: number, year: number) {
   // immediately previous month meant one skipped month (or browsing ahead to a future
   // month, which marks it rolled over) dropped every recurring entry for good.
   const targetIdx = year * 12 + (month - 1)
+  // Only months with recurring entries count as a source — a month holding nothing
+  // but logged one-off purchases must not cut the recurring chain.
   const sourceIdx = state.budget
+    .filter(b => b.recurring)
     .map(b => b.year * 12 + (b.month - 1))
     .filter(i => i < targetIdx && i >= targetIdx - 24)
     .reduce((best, i) => Math.max(best, i), -1)
@@ -591,6 +624,19 @@ export const removeCategoryLimit = (category: string) =>
     return { ...s, categoryLimits: limits }
   })
 
+// Custom expense categories (e.g. "Starbucks"). Removing one only hides it from
+// the picker — past entries keep their category.
+export const addCustomCategory = (name: string) => {
+  const clean = name.trim().replace(/\s+/g, ' ').slice(0, 40)
+  if (!clean) return
+  commit(s => s.customCategories.some(c => c.toLowerCase() === clean.toLowerCase())
+    ? s
+    : { ...s, customCategories: [...s.customCategories, clean] })
+}
+
+export const removeCustomCategory = (name: string) =>
+  commit(s => ({ ...s, customCategories: s.customCategories.filter(c => c !== name) }))
+
 /**
  * Silently snapshots net worth for the current month if one doesn't already exist.
  * Called automatically on login so the history chart fills in without user action.
@@ -635,4 +681,5 @@ export const resetToDemo = () =>
     recurringRolledOver: [],
     incomeHistory: [],
     categoryLimits: {},
+    customCategories: [],
   }))

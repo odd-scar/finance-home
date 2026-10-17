@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Tab } from '../../types'
-import { LogOut, Lock } from 'lucide-react'
+import { LogOut, Lock, RefreshCw, Loader2 } from 'lucide-react'
+import { clearAppCache } from '../../utils/appCache'
 import { Modal } from '../ui/Modal'
 import { SecuritySettings } from '../Lock/LockScreen'
 
@@ -12,6 +13,7 @@ const titles: Record<Tab, string> = {
   goals: 'Financial Goals',
   trips: 'Trip Planner',
   budget: 'Budget',
+  spending: 'Spending',
   bills: 'Bills',
   assets: 'Assets',
   learn: 'Investor Guide',
@@ -25,6 +27,7 @@ const subtitles: Record<Tab, string> = {
   goals: 'Track your milestones',
   trips: 'Plan and budget trips',
   budget: 'Monitor income & expenses',
+  spending: 'Log everyday purchases',
   bills: 'Manage recurring bills',
   assets: 'Track physical assets',
   learn: 'Build wealth with confidence',
@@ -48,7 +51,17 @@ function getInitials(email: string): string {
 export function Header({ activeTab, userEmail, onSignOut, onLock }: HeaderProps) {
   const [accountOpen, setAccountOpen] = useState(false)
   const [securityOpen, setSecurityOpen] = useState(false)
+  const [cacheStep, setCacheStep] = useState<'idle' | 'confirm' | 'working' | 'offline'>('idle')
 
+  const handleClearCache = async () => {
+    setCacheStep('working')
+    const { dataCleared } = await clearAppCache()
+    if (!dataCleared) {
+      setCacheStep('offline')
+      await new Promise(r => setTimeout(r, 2500))
+    }
+    window.location.reload()
+  }
 
   return (
     <>
@@ -73,7 +86,7 @@ export function Header({ activeTab, userEmail, onSignOut, onLock }: HeaderProps)
       </header>
 
       {/* Account modal */}
-      <Modal open={accountOpen} onClose={() => setAccountOpen(false)} title="Account">
+      <Modal open={accountOpen} onClose={() => { setAccountOpen(false); if (cacheStep === 'confirm') setCacheStep('idle') }} title="Account">
         <div className="space-y-4">
           {/* Avatar + email */}
           <div className="flex items-center gap-4 p-4 bg-gray-800/60 border border-gray-700 rounded-2xl">
@@ -100,6 +113,46 @@ export function Header({ activeTab, userEmail, onSignOut, onLock }: HeaderProps)
           >
             <Lock size={15} /> PIN Lock
           </button>
+
+          {/* Clear cache — with a confirm step so it's never hit by accident */}
+          {cacheStep === 'idle' ? (
+            <button
+              type="button"
+              onClick={() => setCacheStep('confirm')}
+              className="w-full flex items-center justify-center gap-2 py-3 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200 rounded-xl text-sm font-medium transition-colors"
+            >
+              <RefreshCw size={15} /> Clear cache & reload
+            </button>
+          ) : (
+            <div className="p-3 bg-gray-800/60 border border-gray-700 rounded-xl space-y-3">
+              <p className="text-xs text-gray-300">
+                {cacheStep === 'offline'
+                  ? "Couldn't reach the cloud, so your data on this device was kept. App files were refreshed — reloading…"
+                  : 'Saves your changes to the cloud, clears the app files and cached data on this device, then reloads with a fresh copy. You stay signed in.'}
+              </p>
+              {cacheStep === 'confirm' && (
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCacheStep('idle')}
+                    className="flex-1 py-2 text-sm text-gray-400 hover:text-white bg-gray-800 rounded-lg transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleClearCache}
+                    className="flex-1 py-2 text-sm font-medium bg-brand-600 hover:bg-brand-500 text-white rounded-lg transition-colors"
+                  >
+                    Clear & reload
+                  </button>
+                </div>
+              )}
+              {cacheStep === 'working' && (
+                <p className="flex items-center gap-2 text-xs text-brand-400"><Loader2 size={13} className="animate-spin" /> Saving and clearing…</p>
+              )}
+            </div>
+          )}
 
           <button
             onClick={() => { setAccountOpen(false); onSignOut?.() }}

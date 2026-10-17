@@ -14,10 +14,12 @@ import { Assets } from './components/Assets/Assets'
 import { Learn } from './components/Learn/Learn'
 import { AuthScreen, UpdatePasswordScreen } from './components/Auth/AuthScreen'
 import { Modal } from './components/ui/Modal'
-import { loadFromSupabase, setSupabaseUser, signOutCleanup } from './store/store'
+import { loadFromSupabase, setSupabaseUser, signOutCleanup, rolloverRecurringEntries } from './store/store'
 import { supabase } from './utils/supabase'
 import type { User } from './utils/supabase'
-import { DollarSign, Loader2, Plus, TrendingUp, Receipt, Target } from 'lucide-react'
+import { DollarSign, Loader2, Plus, TrendingUp, Receipt, Target, Wallet } from 'lucide-react'
+import { Spending } from './components/Spending/Spending'
+import { reloadToLatest } from './utils/appCache'
 import { WelcomeTour, ONBOARDING_KEY } from './components/Onboarding/WelcomeTour'
 import { LockScreen } from './components/Lock/LockScreen'
 import { hasPinSet, isUnlocked, markUnlocked, clearUnlocked, removePin, AUTO_LOCK_MS } from './utils/auth'
@@ -40,6 +42,25 @@ export default function App() {
     clearUnlocked()
     setLocked(true)
   }
+
+  // New deploy downloaded by the service worker → offer a reload (never forced mid-entry)
+  const [updateReady, setUpdateReady] = useState(false)
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return
+    const sw = navigator.serviceWorker
+    const hadController = !!sw.controller // false on first install — that's not an "update"
+    const onControllerChange = () => { if (hadController) setUpdateReady(true) }
+    // Installed phone apps can stay open for days; look for a new version when reopened
+    const checkForUpdate = () => {
+      if (document.visibilityState === 'visible') sw.getRegistration().then(r => r?.update()).catch(() => {})
+    }
+    sw.addEventListener('controllerchange', onControllerChange)
+    document.addEventListener('visibilitychange', checkForUpdate)
+    return () => {
+      sw.removeEventListener('controllerchange', onControllerChange)
+      document.removeEventListener('visibilitychange', checkForUpdate)
+    }
+  }, [])
 
   // Auto-lock after the app has been in the background for a while
   useEffect(() => {
@@ -85,6 +106,10 @@ export default function App() {
           } catch {
             // Timeout or network error — proceed with local data
           }
+          // Carry recurring income/expenses into the current month right away, so the
+          // Dashboard and Spending are right even if Budget hasn't been opened yet
+          const now = new Date()
+          rolloverRecurringEntries(now.getMonth() + 1, now.getFullYear())
           setDataLoading(false)
         } else {
           setUser(null)
@@ -133,12 +158,14 @@ const content: Record<Tab, React.ReactNode> = {
     goals: <Goals />,
     trips: <TripPlanner />,
     budget: <Budget />,
+    spending: <Spending />,
     bills: <Bills />,
     assets: <Assets />,
     learn: <Learn />,
   }
 
   const quickAddItems = [
+    { label: 'Log Expense', icon: <Wallet size={14} />, tab: 'spending' as Tab },
     { label: 'Add Stock', icon: <TrendingUp size={14} />, tab: 'stocks' as Tab },
     { label: 'Add Bill', icon: <Receipt size={14} />, tab: 'bills' as Tab },
     { label: 'Add Transaction', icon: <DollarSign size={14} />, tab: 'budget' as Tab },
@@ -181,6 +208,24 @@ const content: Record<Tab, React.ReactNode> = {
 
   return (
     <div className="flex min-h-screen bg-gray-950 text-white font-sans">
+      {updateReady && (
+        <div
+          className="fixed top-0 left-0 right-0 z-[300] flex items-center justify-center gap-3 px-4 py-2.5 bg-brand-600 text-white text-sm shadow-lg"
+          style={{ paddingTop: 'max(0.625rem, env(safe-area-inset-top))' }}
+        >
+          <span>A new version of Finance Home is ready.</span>
+          <button
+            type="button"
+            onClick={() => { void reloadToLatest() }}
+            className="px-3 py-1 bg-white text-brand-700 font-semibold rounded-lg text-xs hover:bg-brand-50"
+          >
+            Reload
+          </button>
+          <button type="button" onClick={() => setUpdateReady(false)} className="text-white/70 hover:text-white text-xs">
+            Later
+          </button>
+        </div>
+      )}
       <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
       <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
         <Header activeTab={activeTab} userEmail={user.email} onSignOut={handleSignOut} onLock={lockApp} />
