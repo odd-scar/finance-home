@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { monthTotals, expensesByCategory, billsForMonth, paycheckPlan, payPeriodDays } from '../budgetMath'
+import { monthTotals, expensesByCategory, billsForMonth, paycheckPlan, payPeriodDays, monthPlan, coverSource, zeroBased } from '../budgetMath'
 import { markUnlocked, isUnlocked, clearUnlocked, setSessionPin, getSessionPin } from '../auth'
 import type { Bill, BudgetEntry } from '../../types'
 
@@ -60,6 +60,77 @@ describe('fixed vs variable split', () => {
     expect(t.fixedExpenses).toBe(1550)
     expect(t.variableExpenses).toBeCloseTo(186.25)
     expect(t.fixedExpenses + t.variableExpenses).toBeCloseTo(t.expenses)
+  })
+})
+
+describe('monthPlan', () => {
+  const today = new Date(2026, 2, 17) // Mar 17 → 15 days left incl. today
+  const budget = [
+    entry('pay', { type: 'income', category: 'Salary', description: 'Pay', amount: 5000, recurring: true }),
+    entry('groc', { category: 'Groceries', amount: 300 }),
+    entry('sb', { category: 'Starbucks', description: 'Latte', amount: 60 }),
+    entry('save', { category: 'Savings Transfer', description: 'To HYSA', amount: 200, recurring: true }),
+  ]
+  const limits = { Groceries: 400, Starbucks: 40, 'Dining Out': 150, 'Savings Transfer': 500 }
+
+  it('left to spend = income − spent − savings still to set aside', () => {
+    const p = monthPlan(budget, [bill('rent')], limits, 3, 2026, today)
+    // 5000 − (1500 rent + 300 + 60 + 200) − (500 − 200 savings reserve)
+    expect(p.savingsReserve).toBe(300)
+    expect(p.leftToSpend).toBe(2640)
+    expect(p.daysLeft).toBe(15)
+    expect(p.perDay).toBeCloseTo(176)
+  })
+
+  it('splits needs / wants / savings (custom categories are wants)', () => {
+    const p = monthPlan(budget, [bill('rent')], limits, 3, 2026, today)
+    expect(p.split.needs).toBe(1800)  // rent + groceries
+    expect(p.split.wants).toBe(60)    // Starbucks
+    expect(p.split.savings).toBe(500) // 200 transferred + 300 planned
+  })
+
+  it('lists over-plan categories first and finds money to cover them', () => {
+    const p = monthPlan(budget, [], limits, 3, 2026, today)
+    expect(p.rows[0].category).toBe('Starbucks')
+    expect(p.rows[0].remaining).toBe(-20)
+    // Dining has the most unspent plan; Savings is only a last resort
+    expect(coverSource(p.rows, 'Starbucks')?.category).toBe('Dining Out')
+    expect(coverSource(p.rows.filter(r => r.category !== 'Dining Out' && r.category !== 'Groceries'), 'Starbucks')?.category)
+      .toBe('Savings Transfer')
+  })
+
+  it('no daily pace for past months', () => {
+    const p = monthPlan(budget, [], limits, 2, 2026, today)
+    expect(p.perDay).toBeNull()
+    expect(p.daysLeft).toBe(0)
+  })
+})
+
+describe('zeroBased', () => {
+  const income = entry('pay', { type: 'income', category: 'Salary', description: 'Pay', amount: 3000, recurring: true })
+
+  it('counts plans, plus bills/unplanned spending at what they cost', () => {
+    const p = monthPlan(
+      [income, entry('g', { amount: 120 }), entry('sb', { category: 'Starbucks', description: 'Latte', amount: 15 })],
+      [bill('rent', { amount: 1200 })],
+      { Groceries: 400, 'Savings Transfer': 300 },
+      3, 2026
+    )
+    const z = zeroBased(p)
+    // Groceries 400 (plan > spent) + Savings 300 + Rent 1200 (bill) + Starbucks 15 (unplanned)
+    expect(z.assigned).toBe(1915)
+    expect(z.leftToAssign).toBe(1085)
+    expect(z.balanced).toBe(false)
+  })
+
+  it('overspending a plan uses up unassigned money', () => {
+    const p = monthPlan([income, entry('g', { amount: 550 })], [], { Groceries: 400 }, 3, 2026)
+    expect(zeroBased(p).leftToAssign).toBe(2450) // 3000 − 550, not 3000 − 400
+  })
+
+  it('is balanced when every dollar has a job, and negative when over-assigned', () => {
+    expect(zeroBased(monthPlan([income], [], { Groceries: 1000, 'Savings Transfer': 2000 }, 3, 2026)).balanced).toBe(true)
+    expect(zeroBased(monthPlan([income], [], { Groceries: 1000, 'Savings Transfer': 2500 }, 3, 2026)).leftToAssign).toBe(-500)
   })
 })
 

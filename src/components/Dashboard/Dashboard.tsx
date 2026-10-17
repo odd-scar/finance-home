@@ -1,14 +1,13 @@
-import { useState, useEffect } from 'react'
+import { useEffect } from 'react'
 import { useAppStore } from '../../hooks/useAppStore'
 import { formatCurrency, calcPctChange, formatPercent, daysUntilDueDay, parseLocalDate } from '../../utils/finance'
 import { StatCard } from '../ui/Card'
 import { ProgressBar } from '../ui/ProgressBar'
 import { snapshotNetWorth, autoSnapshotIfNeeded } from '../../store/store'
 import { monthTotals, expensesByCategory } from '../../utils/budgetMath'
-import { PaycheckOverridePanel } from '../PaycheckOverride/PaycheckOverridePanel'
 import {
   TrendingUp, CreditCard, PiggyBank, Target, Wallet,
-  ArrowUpRight, ArrowDownRight, Camera, Package, Zap,
+  ArrowUpRight, ArrowDownRight, Camera, Package,
   AlertTriangle, AlertCircle, CheckCircle2, CalendarClock, Bell,
 } from 'lucide-react'
 import type { Bill, FinancialGoal, BudgetEntry } from '../../types'
@@ -136,7 +135,7 @@ function AttentionPanel({
                 </div>
               </div>
               <span className={`text-xs font-semibold shrink-0 ${isOver ? 'text-rose-400' : 'text-amber-400'}`}>
-                {isOver ? 'Over!' : `${Math.round(a.pct * 100)}%`}
+                {isOver ? 'Over plan' : `${Math.round(a.pct * 100)}%`}
               </span>
             </div>
           )
@@ -199,7 +198,6 @@ const currentMonthStr = () => {
 
 export function Dashboard() {
   const { stocks, debts, savings, goals, budget, assets, bills, netWorthHistory, categoryLimits } = useAppStore()
-  const [overrideOpen, setOverrideOpen] = useState(false)
 
   // Auto-snapshot net worth once per month on load
   useEffect(() => { autoSnapshotIfNeeded() }, [])
@@ -308,18 +306,6 @@ export function Dashboard() {
 
   return (
     <div className="p-4 lg:p-6 space-y-4 lg:space-y-6 animate-fade-in">
-
-      {/* Paycheck Override */}
-      <div className="flex justify-end">
-        <button
-          type="button"
-          onClick={() => setOverrideOpen(true)}
-          className="flex items-center gap-2 px-4 py-2.5 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 hover:border-amber-500/50 text-amber-400 rounded-xl text-sm font-medium transition-all duration-200 active:scale-95"
-        >
-          <Zap size={15} className="shrink-0" />
-          Paycheck Override
-        </button>
-      </div>
 
       {/* Needs Attention */}
       <AttentionPanel
@@ -615,7 +601,6 @@ export function Dashboard() {
         </div>
       </div>
 
-      <PaycheckOverridePanel open={overrideOpen} onClose={() => setOverrideOpen(false)} />
     </div>
   )
 }

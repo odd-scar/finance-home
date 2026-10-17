@@ -18,7 +18,6 @@ import { loadFromSupabase, setSupabaseUser, signOutCleanup, rolloverRecurringEnt
 import { supabase } from './utils/supabase'
 import type { User } from './utils/supabase'
 import { DollarSign, Loader2, Plus, TrendingUp, Receipt, Target, Wallet } from 'lucide-react'
-import { Spending } from './components/Spending/Spending'
 import { reloadToLatest } from './utils/appCache'
 import { WelcomeTour, ONBOARDING_KEY } from './components/Onboarding/WelcomeTour'
 import { LockScreen } from './components/Lock/LockScreen'
@@ -107,7 +106,7 @@ export default function App() {
             // Timeout or network error — proceed with local data
           }
           // Carry recurring income/expenses into the current month right away, so the
-          // Dashboard and Spending are right even if Budget hasn't been opened yet
+          // Dashboard is right even if Budget hasn't been opened yet
           const now = new Date()
           rolloverRecurringEntries(now.getMonth() + 1, now.getFullYear())
           setDataLoading(false)
@@ -158,17 +157,15 @@ const content: Record<Tab, React.ReactNode> = {
     goals: <Goals />,
     trips: <TripPlanner />,
     budget: <Budget />,
-    spending: <Spending />,
     bills: <Bills />,
     assets: <Assets />,
     learn: <Learn />,
   }
 
   const quickAddItems = [
-    { label: 'Log Expense', icon: <Wallet size={14} />, tab: 'spending' as Tab },
+    { label: 'Log Expense', icon: <Wallet size={14} />, tab: 'budget' as Tab },
     { label: 'Add Stock', icon: <TrendingUp size={14} />, tab: 'stocks' as Tab },
     { label: 'Add Bill', icon: <Receipt size={14} />, tab: 'bills' as Tab },
-    { label: 'Add Transaction', icon: <DollarSign size={14} />, tab: 'budget' as Tab },
     { label: 'Add Goal', icon: <Target size={14} />, tab: 'goals' as Tab },
   ]
 

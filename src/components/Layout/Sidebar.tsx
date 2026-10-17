@@ -32,23 +32,21 @@ const navItems: NavItem[] = [
   { id: 'goals', label: 'Goals', icon: <Target size={18} /> },
   { id: 'trips', label: 'Trip Planner', icon: <Plane size={18} /> },
   { id: 'budget', label: 'Budget', icon: <BarChart3 size={18} /> },
-  { id: 'spending', label: 'Spending', icon: <Wallet size={18} /> },
   { id: 'bills', label: 'Bills', icon: <Receipt size={18} /> },
   { id: 'assets', label: 'Assets', icon: <Building2 size={18} /> },
   { id: 'learn', label: 'Investor Guide', icon: <BookOpen size={18} /> },
 ]
 
-// Bottom nav primary tabs (shown directly) — Spending is here because it's used daily
+// Bottom nav primary tabs (shown directly)
 const bottomNavPrimary: NavItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
-  { id: 'spending', label: 'Spending', icon: <Wallet size={20} /> },
-  { id: 'budget', label: 'Budget', icon: <BarChart3 size={20} /> },
+  { id: 'budget', label: 'Budget', icon: <Wallet size={20} /> },
   { id: 'stocks', label: 'Stocks', icon: <TrendingUp size={20} /> },
+  { id: 'bills', label: 'Bills', icon: <Receipt size={20} /> },
 ]
 
 // Bottom nav secondary tabs (shown in "More" sheet)
 const bottomNavMore: NavItem[] = [
-  { id: 'bills', label: 'Bills', icon: <Receipt size={24} /> },
   { id: 'debt', label: 'Debt', icon: <CreditCard size={24} /> },
   { id: 'savings', label: 'Savings', icon: <PiggyBank size={24} /> },
   { id: 'goals', label: 'Goals', icon: <Target size={24} /> },

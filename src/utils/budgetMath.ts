@@ -105,6 +105,121 @@ export function expensesByCategory(budget: BudgetEntry[], bills: Bill[], month: 
   return out
 }
 
+// ── Monthly plan (left to spend, plan vs actual, 50/30/20) ────────────────
+
+export const SAVINGS_CATEGORY = 'Savings Transfer'
+
+/**
+ * Categories counted as "needs" for the 50/30/20 reference. Everything else that
+ * isn't savings — including custom categories like "Starbucks" — counts as a want.
+ * (Minimum debt payments are a need; extra payments are commonly counted as savings.)
+ */
+export const NEEDS_CATEGORIES = new Set([
+  'Rent/Mortgage', 'Groceries', 'Transport', 'Utilities', 'Health', 'Insurance', 'Debt Payments', 'Education',
+])
+
+export interface CategoryPlanRow {
+  category: string
+  spent: number
+  /** 0 when the category has no plan */
+  planned: number
+  /** planned − spent; negative means over plan */
+  remaining: number
+}
+
+export interface MonthPlan extends MonthTotals {
+  byCategory: Record<string, number>
+  rows: CategoryPlanRow[]
+  /** Planned savings not transferred yet — set aside before "left to spend" (pay yourself first) */
+  savingsReserve: number
+  /** income − everything spent − savingsReserve */
+  leftToSpend: number
+  /** Days remaining including today (current month only, else 0) */
+  daysLeft: number
+  /** leftToSpend spread over the remaining days (current month only) */
+  perDay: number | null
+  /** Needs / wants / savings totals for the 50/30/20 reference */
+  split: { needs: number; wants: number; savings: number }
+}
+
+export function monthPlan(
+  budget: BudgetEntry[],
+  bills: Bill[],
+  limits: Record<string, number>,
+  month: number,
+  year: number,
+  today: Date = new Date()
+): MonthPlan {
+  const totals = monthTotals(budget, bills, month, year)
+  const byCategory = expensesByCategory(budget, bills, month, year)
+
+  const cats = new Set([...Object.keys(byCategory), ...Object.keys(limits).filter(c => limits[c] > 0)])
+  const rows = [...cats]
+    .map(category => {
+      const spent = byCategory[category] ?? 0
+      const planned = limits[category] ?? 0
+      return { category, spent, planned, remaining: planned - spent }
+    })
+    // Over-plan first (they need attention), then biggest spending
+    .sort((a, b) => {
+      const aOver = a.planned > 0 && a.remaining < 0 ? 1 : 0
+      const bOver = b.planned > 0 && b.remaining < 0 ? 1 : 0
+      return bOver - aOver || b.spent - a.spent || b.planned - a.planned
+    })
+
+  const savingsReserve = Math.max(0, (limits[SAVINGS_CATEGORY] ?? 0) - (byCategory[SAVINGS_CATEGORY] ?? 0))
+  const leftToSpend = totals.income - totals.expenses - savingsReserve
+
+  const isCurrent = today.getMonth() + 1 === month && today.getFullYear() === year
+  const lastDay = new Date(year, month, 0).getDate()
+  const daysLeft = isCurrent ? lastDay - today.getDate() + 1 : 0
+  const perDay = isCurrent && daysLeft > 0 ? Math.max(0, leftToSpend) / daysLeft : null
+
+  const split = { needs: 0, wants: 0, savings: savingsReserve }
+  for (const [cat, amt] of Object.entries(byCategory)) {
+    if (cat === SAVINGS_CATEGORY) split.savings += amt
+    else if (NEEDS_CATEGORIES.has(cat)) split.needs += amt
+    else split.wants += amt
+  }
+
+  return { ...totals, byCategory, rows, savingsReserve, leftToSpend, daysLeft, perDay, split }
+}
+
+export interface ZeroBasedSummary {
+  /** Money with a job: each category's plan, or what it actually took if more (incl. bills/fixed) */
+  assigned: number
+  /** income − assigned. Goal is 0; above 0 = still to assign, below 0 = over-assigned */
+  leftToAssign: number
+  /** true once every dollar of income has a job (within a cent) */
+  balanced: boolean
+}
+
+/**
+ * Zero-based budgeting ("give every dollar a job"). A category's assigned amount is
+ * its plan, or what was actually spent if that's higher — so bills, fixed costs and
+ * unplanned spending are counted automatically, and overspending eats into the
+ * unassigned money until it's covered.
+ */
+export function zeroBased(plan: Pick<MonthPlan, 'income' | 'rows'>): ZeroBasedSummary {
+  const assigned = plan.rows.reduce((s, r) => s + Math.max(r.planned, r.spent), 0)
+  const leftToAssign = Math.round((plan.income - assigned) * 100) / 100
+  return { assigned, leftToAssign, balanced: Math.abs(leftToAssign) < 0.01 }
+}
+
+/**
+ * Where to cover an overspent category from ("roll with the punches"): the category
+ * with the most unspent plan. Savings is only used if nothing else has room.
+ */
+export function coverSource(rows: CategoryPlanRow[], overCategory: string): CategoryPlanRow | null {
+  const donors = rows
+    .filter(r => r.category !== overCategory && r.planned > 0 && r.remaining > 0)
+    .sort((a, b) =>
+      (a.category === SAVINGS_CATEGORY ? 1 : 0) - (b.category === SAVINGS_CATEGORY ? 1 : 0) ||
+      b.remaining - a.remaining
+    )
+  return donors[0] ?? null
+}
+
 // ── Pay periods ────────────────────────────────────────────────────────────
 
 export type PayFrequency = 'weekly' | 'biweekly' | 'semimonthly' | 'monthly'

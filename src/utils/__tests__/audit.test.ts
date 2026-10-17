@@ -25,6 +25,7 @@ import {
 import {
   state, resetToDemo, addBudgetEntry, rolloverRecurringEntries,
   loadFromSupabase, signOutCleanup, addGoal, addCustomCategory, removeCustomCategory, flushSync,
+  setCategoryLimit, moveBudgetPlan, setBudgetMode,
 } from '../../store/store'
 import { clearAppCache } from '../appCache'
 import type { BudgetEntry } from '../../types'
@@ -189,6 +190,31 @@ describe('rolloverRecurringEntries', () => {
   })
 })
 
+describe('moveBudgetPlan ("cover it")', () => {
+  beforeEach(() => resetToDemo())
+
+  it('moves planned money between categories and drops an emptied plan', () => {
+    setCategoryLimit('Dining Out', 150)
+    setCategoryLimit('Starbucks', 40)
+    moveBudgetPlan('Dining Out', 'Starbucks', 20)
+    expect(state.categoryLimits['Starbucks']).toBe(60)
+    expect(state.categoryLimits['Dining Out']).toBe(130)
+    moveBudgetPlan('Dining Out', 'Starbucks', 130)
+    expect(state.categoryLimits['Dining Out']).toBeUndefined()
+    expect(state.categoryLimits['Starbucks']).toBe(190)
+  })
+})
+
+describe('rollover keeps the day of the month for dated recurring entries', () => {
+  beforeEach(() => { resetToDemo(); localStorage.clear() })
+
+  it('Jan 31 rent → Feb 28', () => {
+    addBudgetEntry(entry('rd', 1, 2095, { type: 'expense', category: 'Rent/Mortgage', description: 'Rent', date: '2095-01-31' }))
+    rolloverRecurringEntries(2, 2095)
+    expect(state.budget.find(b => b.month === 2 && b.year === 2095)?.date).toBe('2095-02-28')
+  })
+})
+
 describe('custom categories', () => {
   beforeEach(() => resetToDemo())
 
@@ -245,6 +271,19 @@ describe('loadFromSupabase', () => {
     expect(supabaseResult.upsert).toHaveBeenCalledTimes(1)
     expect(localStorage.getItem('finance-home-data')).toBeNull()
     expect(await flushSync()).toBe(true) // still signed in and syncing
+  })
+
+  it('budget mode is saved to the account and defaults to simple for older data', async () => {
+    vi.useRealTimers()
+    supabaseResult.current = { data: { state: { goals: [], budgetMode: 'zero' } }, error: null }
+    await loadFromSupabase('user-e')
+    expect(state.budgetMode).toBe('zero')
+    setBudgetMode('simple')
+    expect(state.budgetMode).toBe('simple')
+    signOutCleanup()
+    supabaseResult.current = { data: { state: { goals: [] } }, error: null }
+    await loadFromSupabase('user-f')
+    expect(state.budgetMode).toBe('simple')
   })
 
   it('loads the saved cloud state and syncs normally afterwards', async () => {

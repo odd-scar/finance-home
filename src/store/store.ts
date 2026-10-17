@@ -138,6 +138,7 @@ export async function loadFromSupabase(userId: string): Promise<void> {
         incomeHistory:         (cloud as AppState).incomeHistory       ?? [],
         categoryLimits:        (cloud as AppState).categoryLimits      ?? {},
         customCategories:      (cloud as AppState).customCategories    ?? [],
+        budgetMode:            (cloud as AppState).budgetMode === 'zero' ? 'zero' : 'simple',
       }
       // Persist locally so the app works offline after first load
       const json = JSON.stringify(state)
@@ -205,6 +206,7 @@ function defaultState(): AppState {
     incomeHistory: [],
     categoryLimits: {},
     customCategories: [],
+    budgetMode: 'simple',
   }
 }
 
@@ -225,6 +227,7 @@ function emptyState(): AppState {
     incomeHistory: [],
     categoryLimits: {},
     customCategories: [],
+    budgetMode: 'simple',
   }
 }
 
@@ -264,6 +267,7 @@ function loadState(): AppState {
       incomeHistory: parsed.incomeHistory || [],
       categoryLimits: parsed.categoryLimits || {},
       customCategories: parsed.customCategories || [],
+      budgetMode: parsed.budgetMode === 'zero' ? 'zero' : 'simple',
     }
   } catch {
     return defaultState()
@@ -454,9 +458,12 @@ export function rolloverRecurringEntries(month: number, year: number) {
       const amount = r.thisMonthOverride && r.originalRecurringAmount !== undefined
         ? r.originalRecurringAmount
         : r.amount
-      const { thisMonthOverride: _a, originalRecurringAmount: _b, ...rest } = r
+      const { thisMonthOverride: _a, originalRecurringAmount: _b, date: prevDate, ...rest } = r
+      // Same day of the month in the new month (clamped, so the 31st → Feb 28)
+      const day = prevDate ? Math.min(Number(prevDate.slice(8, 10)) || 1, new Date(year, month, 0).getDate()) : null
       return {
         ...rest,
+        ...(day ? { date: `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}` } : {}),
         id: uuid(),
         month,
         year,
@@ -624,6 +631,25 @@ export const removeCategoryLimit = (category: string) =>
     return { ...s, categoryLimits: limits }
   })
 
+export const setBudgetMode = (mode: AppState['budgetMode']) =>
+  commit(s => (s.budgetMode === mode ? s : { ...s, budgetMode: mode }))
+
+/**
+ * Move planned money from one category to another in one step, e.g. cover an
+ * overspent "Starbucks" from unspent "Dining Out". A plan that reaches 0 is removed.
+ */
+export const moveBudgetPlan = (from: string, to: string, amount: number) => {
+  if (!(amount > 0) || from === to) return
+  commit(s => {
+    const limits = { ...s.categoryLimits }
+    const fromLeft = Math.round(((limits[from] ?? 0) - amount) * 100) / 100
+    if (fromLeft > 0) limits[from] = fromLeft
+    else delete limits[from]
+    limits[to] = Math.round(((limits[to] ?? 0) + amount) * 100) / 100
+    return { ...s, categoryLimits: limits }
+  })
+}
+
 // Custom expense categories (e.g. "Starbucks"). Removing one only hides it from
 // the picker — past entries keep their category.
 export const addCustomCategory = (name: string) => {
@@ -682,4 +708,5 @@ export const resetToDemo = () =>
     incomeHistory: [],
     categoryLimits: {},
     customCategories: [],
+    budgetMode: 'simple',
   }))
