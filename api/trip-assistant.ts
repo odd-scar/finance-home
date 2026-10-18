@@ -83,6 +83,9 @@ export async function POST(request: Request): Promise<Response> {
     // Google errors
     if (err instanceof ApiError) {
       console.error('trip-assistant gemini error', err.status, err.message)
+      if (err.status === 429 && /limit:\s*0\b/.test(err.message)) {
+        return json({ error: 'upstream', message: 'This Gemini key has no free quota for the available models. Check your plan at aistudio.google.com.' }, 502)
+      }
       if (err.status === 429) {
         return json({ error: 'busy', message: 'The free Gemini limit was reached for now — try again in a minute (or tomorrow).' }, 429)
       }
@@ -90,7 +93,7 @@ export async function POST(request: Request): Promise<Response> {
         return json({ error: 'ai_not_configured', message: 'Google rejected the GEMINI_API_KEY. Check that it was copied correctly in Vercel.' }, 503)
       }
       if (err.status === 404) {
-        return json({ error: 'upstream', message: 'The Gemini model name isn’t available for this key. Set GEMINI_MODEL in Vercel to a current model.' }, 502)
+        return json({ error: 'upstream', message: 'None of Google’s current Gemini models are available for this key. Check the key at aistudio.google.com.' }, 502)
       }
       return json({ error: 'upstream', message: 'The assistant hit a problem. Please try again.' }, 502)
     }

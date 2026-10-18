@@ -213,7 +213,6 @@ export async function runTripAssistant(
 // JSON-schema call that turns the write-up into suggestions. Step 2 picks each source by
 // number from the links step 1 actually found, so it can never invent a URL.
 
-export const GEMINI_MODEL = 'gemini-2.5-flash'
 
 export interface GeminiSource { title: string; uri: string }
 
@@ -282,19 +281,88 @@ export function resolveGeminiSources(raw: unknown, sources: GeminiSource[]): unk
   return { ...obj, items }
 }
 
+/**
+ * Order Gemini models to try: stable Flash models first (newest version first), then
+ * Flash-Lite. Previews, experiments and specialty models (image, audio, …) are skipped.
+ */
+export function rankGeminiModels(names: string[]): string[] {
+  return names
+    .map(n => n.replace(/^models\//, ''))
+    .map(id => {
+      const m = /^gemini-(\d+(?:\.\d+)?)-(flash|flash-lite)$/.exec(id)
+      return m ? { id, version: parseFloat(m[1]), lite: m[2] === 'flash-lite' } : null
+    })
+    .filter((x): x is { id: string; version: number; lite: boolean } => x !== null)
+    .sort((a, b) => Number(a.lite) - Number(b.lite) || b.version - a.version)
+    .map(x => x.id)
+}
+
+/** Used only if listing the key's models fails */
+const FALLBACK_GEMINI_MODELS = ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.5-flash', 'gemini-3-flash', 'gemini-3.5-flash-lite']
+let cachedGeminiModels: string[] | null = null
+
+/** Models to try, in order: GEMINI_MODEL if set, else what this key can actually use */
+async function geminiCandidates(ai: GoogleGenAI): Promise<string[]> {
+  if (process.env.GEMINI_MODEL) return [process.env.GEMINI_MODEL]
+  if (cachedGeminiModels) return cachedGeminiModels
+  try {
+    const names: string[] = []
+    for await (const m of await ai.models.list()) {
+      if (m.name && (m.supportedActions ?? ['generateContent']).includes('generateContent')) names.push(m.name)
+    }
+    const ranked = rankGeminiModels(names)
+    if (ranked.length) return (cachedGeminiModels = ranked)
+  } catch { /* fall back to known names */ }
+  return FALLBACK_GEMINI_MODELS
+}
+
+/**
+ * Errors that mean "this model won't work for this key — try the next one":
+ * not found/retired, or a free-tier quota of zero for that model.
+ */
+export function isModelUnavailable(err: unknown): boolean {
+  const status = (err as { status?: number })?.status
+  const msg = String((err as { message?: string })?.message ?? '')
+  return status === 404 ||
+    (status === 429 && /limit:\s*0\b/.test(msg)) ||
+    (status === 400 && /model.*(not (found|supported|available))/i.test(msg))
+}
+
 export async function runGeminiAssistant(
   ai: GoogleGenAI,
   req: TripAssistantRequest,
   today: Date = new Date()
 ): Promise<TripAssistantResult> {
-  const model = process.env.GEMINI_MODEL || GEMINI_MODEL
+  const candidates = (await geminiCandidates(ai)).slice(0, 4)
+  let lastErr: unknown
+  for (const model of candidates) {
+    try {
+      const result = await runGeminiWithModel(ai, model, req, today)
+      console.log('trip-assistant used', model)
+      return result
+    } catch (err) {
+      if (!isModelUnavailable(err)) throw err
+      console.warn('trip-assistant: model unavailable, trying next', model)
+      if (cachedGeminiModels) cachedGeminiModels = cachedGeminiModels.filter(m => m !== model)
+      lastErr = err
+    }
+  }
+  throw lastErr
+}
+
+async function runGeminiWithModel(
+  ai: GoogleGenAI,
+  model: string,
+  req: TripAssistantRequest,
+  today: Date
+): Promise<TripAssistantResult> {
   const prompt = buildUserPrompt(req, today, false)
 
-  // Step 1 — grounded search
+  // Step 1 — grounded search (newer models think before answering, which uses output budget)
   const research = await ai.models.generateContent({
     model,
     contents: prompt,
-    config: { systemInstruction: GEMINI_SEARCH_SYSTEM, tools: [{ googleSearch: {} }], maxOutputTokens: 4000 },
+    config: { systemInstruction: GEMINI_SEARCH_SYSTEM, tools: [{ googleSearch: {} }], maxOutputTokens: 16000 },
   })
   if (research.promptFeedback?.blockReason) {
     throw new TripAssistantError('refused', 'The assistant declined this request. Try rephrasing it.')
@@ -311,7 +379,7 @@ export async function runGeminiAssistant(
       systemInstruction: GEMINI_STRUCTURE_PROMPT(sources),
       responseMimeType: 'application/json',
       responseJsonSchema: GEMINI_SCHEMA,
-      maxOutputTokens: 4000,
+      maxOutputTokens: 16000,
     },
   })
   let parsed: unknown

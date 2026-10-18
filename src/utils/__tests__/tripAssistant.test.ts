@@ -173,3 +173,40 @@ describe('runGeminiAssistant', () => {
     await expect(runGeminiAssistant(fakeGemini({ text: 'x' }, 'not json').ai, req)).rejects.toMatchObject({ code: 'no_result' })
   })
 })
+
+// ── Gemini model selection ──────────────────────────────────────────────────
+import { rankGeminiModels, isModelUnavailable } from '../../server/tripAssistant'
+
+describe('Gemini model selection', () => {
+  it('prefers the newest stable Flash, then Flash-Lite; skips previews and specialty models', () => {
+    expect(rankGeminiModels([
+      'models/gemini-2.5-flash', 'models/gemini-3.8-flash', 'models/gemini-3.5-flash-lite',
+      'models/gemini-3.7-flash', 'models/gemini-omni-flash-preview', 'models/gemini-3.1-pro-preview',
+      'models/gemini-3.5-transcribe', 'models/gemini-3-flash',
+    ])).toEqual(['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3-flash', 'gemini-2.5-flash', 'gemini-3.5-flash-lite'])
+  })
+
+  it('knows which errors mean "try another model"', () => {
+    expect(isModelUnavailable({ status: 404, message: 'models/gemini-2.5-flash is not found' })).toBe(true)
+    expect(isModelUnavailable({ status: 429, message: 'Quota exceeded ... free_tier_requests, limit: 0, model: x' })).toBe(true)
+    expect(isModelUnavailable({ status: 429, message: 'Quota exceeded ... limit: 20' })).toBe(false) // real daily limit
+    expect(isModelUnavailable({ status: 400, message: 'API key not valid' })).toBe(false)
+  })
+
+  it('lists the key’s models and moves on when one is retired', async () => {
+    const list = vi.fn().mockResolvedValue((async function* () {
+      yield { name: 'models/gemini-3.8-flash', supportedActions: ['generateContent'] }
+      yield { name: 'models/gemini-3.7-flash', supportedActions: ['generateContent'] }
+      yield { name: 'models/text-embedding-005', supportedActions: ['embedContent'] }
+    })())
+    const notFound = Object.assign(new Error('models/gemini-3.8-flash is not found'), { status: 404 })
+    const generateContent = vi.fn()
+      .mockRejectedValueOnce(notFound)
+      .mockResolvedValueOnce({ text: 'notes', candidates: [{ groundingMetadata: { groundingChunks: [] } }] })
+      .mockResolvedValueOnce({ text: geminiItems(-1) })
+    const ai = { models: { list, generateContent } } as unknown as GoogleGenAI
+    const r = await runGeminiAssistant(ai, req)
+    expect(r.items).toHaveLength(1)
+    expect(generateContent.mock.calls.map(c => c[0].model)).toEqual(['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.7-flash'])
+  })
+})
