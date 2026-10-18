@@ -1,4 +1,6 @@
 import { flushSync, clearLocalDataCache } from '../store/store'
+import { HISTORY_CACHE_KEY } from './stockHistory'
+import { FUNDAMENTALS_CACHE_KEY } from './fundamentalsClient'
 
 const STOCK_CACHE_KEY = 'finance-home-stock-cache'
 
@@ -16,7 +18,11 @@ export async function clearAppCache(): Promise<{ dataCleared: boolean }> {
   const synced = await flushSync()
   if (synced) clearLocalDataCache()
 
-  try { localStorage.removeItem(STOCK_CACHE_KEY) } catch { /* storage unavailable */ }
+  try {
+    localStorage.removeItem(STOCK_CACHE_KEY)
+    localStorage.removeItem(HISTORY_CACHE_KEY)
+    localStorage.removeItem(FUNDAMENTALS_CACHE_KEY)
+  } catch { /* storage unavailable */ }
 
   try {
     if ('caches' in window) {

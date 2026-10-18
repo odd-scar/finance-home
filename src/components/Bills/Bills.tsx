@@ -5,13 +5,18 @@ import { Modal } from '../ui/Modal'
 import { Button, Input, FormField, Select } from '../ui/FormField'
 import {
   Plus, Trash2, Edit2, Home, Zap, Repeat, Shield, CreditCard, Car, Receipt,
-  CalendarPlus, CheckCircle, AlertCircle, Clock,
+  CalendarPlus, CheckCircle, AlertCircle, Clock, X,
 } from 'lucide-react'
 import { v4 as uuid } from 'uuid'
 import { Bill } from '../../types'
+import { MoneyInput } from '../ui/MoneyInput'
+import { useBatchAdd, JustAdded } from '../ui/BatchAdd'
+import { parseAmount } from '../../utils/mathExpr'
 import { formatCurrency, nextDueDate, daysUntilDueDay } from '../../utils/finance'
 
-const clampDueDay = (s: string) => Math.min(31, Math.max(1, parseInt(s) || 1))
+const TIP_KEY = 'finance-home-bills-tip-dismissed'
+
+const clampDueDay =(s: string) => Math.min(31, Math.max(1, parseInt(s) || 1))
 
 const CATEGORIES = ['housing', 'utilities', 'subscriptions', 'insurance', 'loan', 'transportation', 'other'] as const
 const FREQUENCIES = ['monthly', 'quarterly', 'annual'] as const
@@ -82,6 +87,11 @@ export function Bills() {
   const [addOpen, setAddOpen] = useState(false)
   const [editBill, setEditBill] = useState<Bill | null>(null)
   const [form, setForm] = useState({ ...emptyForm })
+  const [formError, setFormError] = useState('')
+  const batch = useBatchAdd()
+  const [showTip, setShowTip] = useState(() => {
+    try { return !localStorage.getItem(TIP_KEY) } catch { return true }
+  })
 
   const sorted = [...bills].sort((a, b) => a.dueDay - b.dueDay)
 
@@ -93,12 +103,24 @@ export function Bills() {
   }, 0)
   const autoPayCount = bills.filter(b => b.autoPay).length
 
+  const openAdd = () => {
+    setForm({ ...emptyForm })
+    setFormError('')
+    batch.reset()
+    setAddOpen(true)
+  }
+
+  // Add and stay open for the next bill — keeps category & frequency, clears the rest
   const handleAdd = () => {
-    if (!form.name || !form.amount) return
+    const amount = parseAmount(form.amount)
+    if (!form.name.trim() || amount <= 0) {
+      setFormError(!form.name.trim() ? 'Give the bill a name.' : 'Enter the amount.')
+      return
+    }
     const bill: Bill = {
       id: uuid(),
-      name: form.name,
-      amount: parseFloat(form.amount) || 0,
+      name: form.name.trim(),
+      amount,
       category: form.category,
       dueDay: clampDueDay(form.dueDay),
       frequency: form.frequency,
@@ -107,15 +129,16 @@ export function Bills() {
       addedAt: new Date().toISOString(),
     }
     addBill(bill)
-    setForm({ ...emptyForm })
-    setAddOpen(false)
+    batch.record({ id: bill.id, label: bill.name, amount })
+    setForm({ ...emptyForm, category: form.category, frequency: form.frequency })
+    setFormError('')
   }
 
   const handleEdit = () => {
     if (!editBill) return
     updateBill(editBill.id, {
       name: form.name,
-      amount: parseFloat(form.amount) || 0,
+      amount: parseAmount(form.amount),
       category: form.category,
       dueDay: clampDueDay(form.dueDay),
       frequency: form.frequency,
@@ -138,22 +161,23 @@ export function Bills() {
     })
   }
 
-  const billFormJsx = (
-    <div className="space-y-4">
+  const billFormJsx = (adding: boolean) => (
+    <div className="space-y-4" key={adding ? batch.formKey : 'edit'}>
       <FormField label="Bill Name">
         <Input
           placeholder="Rent, Netflix, Car Insurance…"
+          autoFocus={adding && batch.added.length > 0}
           value={form.name}
-          onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+          onChange={e => { setForm(f => ({ ...f, name: e.target.value })); setFormError('') }}
+          onKeyDown={e => { if (adding && e.key === 'Enter') handleAdd() }}
         />
       </FormField>
       <div className="grid grid-cols-2 gap-3">
         <FormField label="Amount ($)">
-          <Input
-            type="number"
-            placeholder="0.00"
+          <MoneyInput
             value={form.amount}
-            onChange={e => setForm(f => ({ ...f, amount: e.target.value }))}
+            onChange={v => { setForm(f => ({ ...f, amount: v })); setFormError('') }}
+            onEnter={adding ? handleAdd : undefined}
           />
         </FormField>
         <FormField label="Due Day (1–31)">
@@ -201,20 +225,32 @@ export function Bills() {
           placeholder="Any notes about this bill…"
           value={form.notes}
           onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+          onKeyDown={e => { if (adding && e.key === 'Enter') handleAdd() }}
         />
       </FormField>
+      {formError && <p className="text-xs text-rose-400">{formError}</p>}
     </div>
   )
 
   return (
     <div className="p-4 lg:p-6 space-y-4 lg:space-y-6 animate-fade-in">
-      {/* Google Calendar tip */}
-      <div className="flex items-start gap-3 p-4 bg-brand-600/10 border border-brand-600/30 rounded-xl">
-        <CalendarPlus size={18} className="text-brand-400 shrink-0 mt-0.5" />
-        <p className="text-sm text-brand-300">
-          Click the calendar icon on any bill to add it to Google Calendar with recurring reminders — no extra setup needed.
-        </p>
-      </div>
+      {/* Google Calendar tip — shown until closed (remembered on this device) */}
+      {showTip && (
+        <div className="flex items-start gap-3 pl-4 pr-1 py-2 bg-brand-600/10 border border-brand-600/30 rounded-xl">
+          <CalendarPlus size={18} className="text-brand-400 shrink-0 mt-2" />
+          <p className="text-sm text-brand-300 flex-1 py-1.5">
+            Tap the calendar icon on a bill to add it to Google Calendar with monthly reminders.
+          </p>
+          <button
+            type="button"
+            onClick={() => { setShowTip(false); try { localStorage.setItem(TIP_KEY, '1') } catch { /* storage unavailable */ } }}
+            aria-label="Dismiss tip"
+            className="p-2 text-brand-400/70 hover:text-brand-300"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      )}
 
       {/* Summary bar */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -240,7 +276,7 @@ export function Bills() {
       {/* Header + Add */}
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-white">Recurring Bills</h2>
-        <Button onClick={() => { setForm({ ...emptyForm }); setAddOpen(true) }}>
+        <Button onClick={openAdd}>
           <Plus size={14} /> Add Bill
         </Button>
       </div>
@@ -359,15 +395,25 @@ export function Bills() {
         onClose={() => { setAddOpen(false); setForm({ ...emptyForm }) }}
         title="Add Bill"
         size="lg"
-        footer={<div className="flex gap-3"><Button variant="secondary" onClick={() => { setAddOpen(false); setForm({ ...emptyForm }) }} className="flex-1">Cancel</Button><Button onClick={handleAdd} className="flex-1">Add Bill</Button></div>}
-      >{billFormJsx}</Modal>
+        footer={
+          <div className="flex gap-3">
+            <Button variant="secondary" onClick={() => { setAddOpen(false); setForm({ ...emptyForm }) }} className="flex-1 justify-center">
+              {batch.added.length > 0 ? 'Done' : 'Cancel'}
+            </Button>
+            <Button onClick={handleAdd} className="flex-1 justify-center"><Plus size={14} /> Add bill</Button>
+          </div>
+        }
+      >
+        <JustAdded items={batch.added} noun="bill" />
+        {billFormJsx(true)}
+      </Modal>
       <Modal
         open={!!editBill}
         onClose={() => { setEditBill(null); setForm({ ...emptyForm }) }}
         title="Edit Bill"
         size="lg"
-        footer={<div className="flex gap-3"><Button variant="secondary" onClick={() => { setEditBill(null); setForm({ ...emptyForm }) }} className="flex-1">Cancel</Button><Button onClick={handleEdit} className="flex-1">Save Changes</Button></div>}
-      >{billFormJsx}</Modal>
+        footer={<div className="flex gap-3"><Button variant="secondary" onClick={() => { setEditBill(null); setForm({ ...emptyForm }) }} className="flex-1 justify-center">Cancel</Button><Button onClick={handleEdit} className="flex-1 justify-center">Save Changes</Button></div>}
+      >{billFormJsx(false)}</Modal>
     </div>
   )
 }

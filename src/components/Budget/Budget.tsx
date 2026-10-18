@@ -18,6 +18,8 @@ import { BudgetEntry } from '../../types'
 import { PaycheckOverridePanel } from '../PaycheckOverride/PaycheckOverridePanel'
 import { monthPlan, monthTotals, coverSource, zeroBased, SAVINGS_CATEGORY, type BillItem } from '../../utils/budgetMath'
 import { INCOME_CATS, VARIABLE_CATS, allExpenseCategories, catColor, todayISO } from '../../utils/categories'
+import { MoneyInput } from '../ui/MoneyInput'
+import { parseAmount } from '../../utils/mathExpr'
 
 const LAST_CAT_KEY = 'finance-home-last-spend-category'
 
@@ -114,7 +116,8 @@ export function Budget() {
     const year = Math.floor(idx / 12)
     return {
       value: `${year}-${month}`,
-      label: `${new Date(year, month - 1, 1).toLocaleString('en-US', { month: 'short', year: 'numeric' })} — ${formatCurrency(monthTotals(budget, bills, month, year).expenses)} spent`,
+      // Short enough to fit a phone header: "Oct 2026 · $8.5K spent"
+      label: `${new Date(year, month - 1, 1).toLocaleString('en-US', { month: 'short', year: 'numeric' })} · ${formatCurrency(monthTotals(budget, bills, month, year).expenses, true)} spent`,
     }
   })
 
@@ -166,7 +169,7 @@ export function Budget() {
   }
 
   const handleLog = () => {
-    const amt = parseFloat(amount)
+    const amt = parseAmount(amount)
     if (!(amt > 0)) { setFormError('Enter an amount.'); amountRef.current?.focus(); return }
     const day = /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : defaultDateFor(viewMonth, viewYear)
     const d = parseLocalDate(day)
@@ -216,7 +219,7 @@ export function Budget() {
     setPlanInput(current > 0 ? String(current) : '')
   }
   const savePlan = (cat: string) => {
-    const val = parseFloat(planInput)
+    const val = parseAmount(planInput)
     if (val > 0) setCategoryLimit(cat, Math.round(val * 100) / 100)
     else removeCategoryLimit(cat)
     setEditingPlan(null)
@@ -334,7 +337,7 @@ export function Budget() {
     const updates: Partial<BudgetEntry> = {
       category: editForm.category,
       description: editForm.description,
-      amount: parseFloat(editForm.amount) || 0,
+      amount: parseAmount(editForm.amount),
       type: editForm.type,
       recurring: editForm.recurring,
     }
@@ -618,21 +621,14 @@ export function Budget() {
           )}
         </div>
 
-        <div className="relative">
-          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-xl font-semibold">$</span>
-          <input
-            ref={amountRef}
-            type="number"
-            inputMode="decimal"
-            min="0"
-            step="0.01"
-            placeholder="0.00"
+        <div className="text-2xl font-bold">
+          <MoneyInput
+            inputRef={amountRef}
             aria-label="Amount"
             value={amount}
-            onChange={e => { setAmount(e.target.value); setFormError('') }}
-            onKeyDown={e => { if (e.key === 'Enter') handleLog() }}
-            className={`${inputCls} w-full pl-9 pr-4 py-3 text-2xl font-bold`}
-            style={{ fontSize: '24px' }}
+            onChange={v => { setAmount(v); setFormError('') }}
+            onEnter={handleLog}
+            className="!rounded-xl !py-3 text-2xl font-bold"
           />
         </div>
 
@@ -731,7 +727,7 @@ export function Budget() {
           onClick={handleLog}
           className={`w-full py-3 text-white font-semibold rounded-xl transition-colors ${logType === 'income' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-brand-600 hover:bg-brand-500'}`}
         >
-          {logType === 'income' ? 'Add' : 'Log'} {parseFloat(amount) > 0 ? formatCurrency(parseFloat(amount)) : logType === 'income' ? 'income' : 'expense'} · {activeCat}
+          {logType === 'income' ? 'Add' : 'Log'} {parseAmount(amount) > 0 ? formatCurrency(parseAmount(amount)) : logType === 'income' ? 'income' : 'expense'} · {activeCat}
         </button>
       </div>
 
@@ -1010,7 +1006,7 @@ export function Budget() {
           </FormField>
           <div className="grid grid-cols-2 gap-3">
             <FormField label="Amount ($)">
-              <Input type="number" value={editForm.amount} onChange={e => setEditForm(f => ({ ...f, amount: e.target.value }))} />
+              <MoneyInput value={editForm.amount} onChange={v => setEditForm(f => ({ ...f, amount: v }))} />
             </FormField>
             <FormField label="Date">
               <Input type="date" value={editForm.date} onChange={e => setEditForm(f => ({ ...f, date: e.target.value }))} style={{ colorScheme: 'dark' }} />

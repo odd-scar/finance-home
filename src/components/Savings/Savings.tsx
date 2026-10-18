@@ -10,6 +10,9 @@ import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'rec
 import { Plus, Trash2, Edit2, PiggyBank, TrendingUp, StickyNote } from 'lucide-react'
 import { v4 as uuid } from 'uuid'
 import { SavingsAccount } from '../../types'
+import { MoneyInput } from '../ui/MoneyInput'
+import { useBatchAdd, JustAdded } from '../ui/BatchAdd'
+import { parseAmount, parseNumber } from '../../utils/mathExpr'
 
 const TOOLTIP_STYLE = {
   backgroundColor: '#1f2937', border: '1px solid #374151',
@@ -190,6 +193,8 @@ export function Savings() {
   const [editAccount, setEditAccount] = useState<SavingsAccount | null>(null)
   const [selected, setSelected] = useState<SavingsAccount | null>(null)
   const [form, setForm] = useState({ ...emptyForm })
+  const [formError, setFormError] = useState('')
+  const batch = useBatchAdd()
 
   // Always derive selected from the live store so detail modal stays up-to-date after edits
   const selectedAccount = selected ? savings.find(a => a.id === selected.id) ?? null : null
@@ -198,31 +203,42 @@ export function Savings() {
   const totalGoal = savings.reduce((s, a) => s + (a.goalAmount ?? 0), 0)
   const totalMonthly = savings.reduce((s, a) => s + a.monthlyContribution, 0)
 
+  const openAdd = () => {
+    setForm({ ...emptyForm })
+    setFormError('')
+    batch.reset()
+    setAddOpen(true)
+  }
+
+  // Add and stay open for the next account — keeps category & rate, clears the rest
   const handleAdd = () => {
+    if (!form.name.trim()) { setFormError('Give the account a name.'); return }
+    const balance = parseAmount(form.balance)
     const account: SavingsAccount = {
       id: uuid(),
-      name: form.name,
-      balance: parseFloat(form.balance) || 0,
-      goalAmount: form.goalAmount ? parseFloat(form.goalAmount) : undefined,
-      monthlyContribution: parseFloat(form.monthlyContribution) || 0,
-      interestRate: parseFloat(form.interestRate) || 0,
+      name: form.name.trim(),
+      balance,
+      goalAmount: parseAmount(form.goalAmount) || undefined,
+      monthlyContribution: parseAmount(form.monthlyContribution),
+      interestRate: parseNumber(form.interestRate),
       category: form.category,
       history: [],
       addedAt: new Date().toISOString(),
     }
     addSavings(account)
-    setForm({ ...emptyForm })
-    setAddOpen(false)
+    batch.record({ id: account.id, label: account.name, amount: balance })
+    setForm({ ...emptyForm, category: form.category, interestRate: form.interestRate })
+    setFormError('')
   }
 
   const handleEdit = () => {
     if (!editAccount) return
     updateSavings(editAccount.id, {
       name: form.name,
-      balance: parseFloat(form.balance) || 0,
-      goalAmount: form.goalAmount ? parseFloat(form.goalAmount) : undefined,
-      monthlyContribution: parseFloat(form.monthlyContribution) || 0,
-      interestRate: parseFloat(form.interestRate) || 0,
+      balance: parseAmount(form.balance),
+      goalAmount: parseAmount(form.goalAmount) || undefined,
+      monthlyContribution: parseAmount(form.monthlyContribution),
+      interestRate: parseNumber(form.interestRate),
       category: form.category,
     })
     setEditAccount(null)
@@ -238,10 +254,15 @@ export function Savings() {
     })
   }
 
-  const savingsFormJsx = (
-    <div className="space-y-4">
+  const savingsFormJsx = (adding: boolean) => (
+    <div className="space-y-4" key={adding ? batch.formKey : 'edit'}>
       <FormField label="Account Name">
-        <Input placeholder="Emergency Fund, House Down Payment…" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+        <Input
+          placeholder="Emergency Fund, House Down Payment…"
+          autoFocus={adding && batch.added.length > 0}
+          value={form.name}
+          onChange={e => { setForm(f => ({ ...f, name: e.target.value })); setFormError('') }}
+        />
       </FormField>
       <FormField label="Category">
         <Select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value as SavingsAccount['category'] }))}>
@@ -250,18 +271,19 @@ export function Savings() {
       </FormField>
       <div className="grid grid-cols-2 gap-3">
         <FormField label="Current Balance ($)">
-          <Input type="number" placeholder="0.00" value={form.balance} onChange={e => setForm(f => ({ ...f, balance: e.target.value }))} />
+          <MoneyInput value={form.balance} onChange={v => setForm(f => ({ ...f, balance: v }))} onEnter={adding ? handleAdd : undefined} />
         </FormField>
         <FormField label="Goal Amount ($)" hint="Optional">
-          <Input type="number" placeholder="0.00" value={form.goalAmount} onChange={e => setForm(f => ({ ...f, goalAmount: e.target.value }))} />
+          <MoneyInput value={form.goalAmount} onChange={v => setForm(f => ({ ...f, goalAmount: v }))} onEnter={adding ? handleAdd : undefined} />
         </FormField>
         <FormField label="Monthly Contribution ($)" hint="Keep in sync with Budget → Savings Transfer">
-          <Input type="number" placeholder="0.00" value={form.monthlyContribution} onChange={e => setForm(f => ({ ...f, monthlyContribution: e.target.value }))} />
+          <MoneyInput value={form.monthlyContribution} onChange={v => setForm(f => ({ ...f, monthlyContribution: v }))} onEnter={adding ? handleAdd : undefined} />
         </FormField>
         <FormField label="Interest Rate (% APY)">
-          <Input type="number" placeholder="4.50" value={form.interestRate} onChange={e => setForm(f => ({ ...f, interestRate: e.target.value }))} />
+          <MoneyInput prefix="" money={false} placeholder="4.50" value={form.interestRate} onChange={v => setForm(f => ({ ...f, interestRate: v }))} onEnter={adding ? handleAdd : undefined} />
         </FormField>
       </div>
+      {formError && <p className="text-xs text-rose-400">{formError}</p>}
     </div>
   )
 
@@ -288,7 +310,7 @@ export function Savings() {
       <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
           <h3 className="font-semibold text-white">Savings Accounts</h3>
-          <Button size="sm" onClick={() => { setForm({ ...emptyForm }); setAddOpen(true) }}><Plus size={14} /> Add Account</Button>
+          <Button size="sm" onClick={openAdd}><Plus size={14} /> Add Account</Button>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 sm:p-5">
           {savings.map(account => {
@@ -361,14 +383,24 @@ export function Savings() {
         open={addOpen}
         onClose={() => { setAddOpen(false); setForm({ ...emptyForm }) }}
         title="Add Savings Account"
-        footer={<div className="flex gap-3"><Button variant="secondary" onClick={() => { setAddOpen(false); setForm({ ...emptyForm }) }} className="flex-1">Cancel</Button><Button onClick={handleAdd} className="flex-1">Add Account</Button></div>}
-      >{savingsFormJsx}</Modal>
+        footer={
+          <div className="flex gap-3">
+            <Button variant="secondary" onClick={() => { setAddOpen(false); setForm({ ...emptyForm }) }} className="flex-1 justify-center">
+              {batch.added.length > 0 ? 'Done' : 'Cancel'}
+            </Button>
+            <Button onClick={handleAdd} className="flex-1 justify-center"><Plus size={14} /> Add account</Button>
+          </div>
+        }
+      >
+        <JustAdded items={batch.added} noun="account" />
+        {savingsFormJsx(true)}
+      </Modal>
       <Modal
         open={!!editAccount}
         onClose={() => { setEditAccount(null); setForm({ ...emptyForm }) }}
         title="Edit Account"
         footer={<div className="flex gap-3"><Button variant="secondary" onClick={() => { setEditAccount(null); setForm({ ...emptyForm }) }} className="flex-1">Cancel</Button><Button onClick={handleEdit} className="flex-1">Save</Button></div>}
-      >{savingsFormJsx}</Modal>
+      >{savingsFormJsx(false)}</Modal>
 
       {/* Detail / Growth Projection Modal */}
       <Modal open={!!selectedAccount} onClose={() => setSelected(null)} title={selectedAccount?.name ?? ''} size="lg">

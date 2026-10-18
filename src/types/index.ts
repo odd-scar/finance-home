@@ -149,4 +149,6 @@ export interface AppState {
   customCategories: string[]
   /** Budget tab style: 'simple' (left to spend) or 'zero' (zero-based: assign every dollar) */
   budgetMode: 'simple' | 'zero'
+  /** Dashboard alerts the user closed. Keys include the period, so an alert returns when the situation changes. */
+  dismissedAlerts: string[]
 }

@@ -10,6 +10,9 @@ import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, 
 import { Plus, Trash2, Edit2, CreditCard, TrendingDown } from 'lucide-react'
 import { v4 as uuid } from 'uuid'
 import { Debt } from '../../types'
+import { MoneyInput } from '../ui/MoneyInput'
+import { useBatchAdd, JustAdded } from '../ui/BatchAdd'
+import { parseAmount, parseNumber } from '../../utils/mathExpr'
 
 const TOOLTIP_STYLE = {
   backgroundColor: '#1f2937',
@@ -49,26 +52,42 @@ export function DebtTracker() {
   const [addOpen, setAddOpen] = useState(false)
   const [editDebt, setEditDebt] = useState<Debt | null>(null)
   const [form, setForm] = useState({ ...emptyForm })
+  const [formError, setFormError] = useState('')
+  const batch = useBatchAdd()
   const [extraPayment, setExtraPayment] = useState(200)
   const [strategy, setStrategy] = useState<'avalanche' | 'snowball'>('avalanche')
 
   const totalDebt = debts.reduce((s, d) => s + d.balance, 0)
   const totalMin = debts.reduce((s, d) => s + d.minimumPayment, 0)
 
+  const openAdd = () => {
+    setForm({ ...emptyForm })
+    setFormError('')
+    batch.reset()
+    setAddOpen(true)
+  }
+
+  // Add and stay open for the next debt — keeps the type, clears the rest
   const handleAdd = () => {
+    const balance = parseAmount(form.balance)
+    if (!form.name.trim() || balance <= 0) {
+      setFormError(!form.name.trim() ? 'Give the debt a name.' : 'Enter the current balance.')
+      return
+    }
     const debt: Debt = {
       id: uuid(),
-      name: form.name,
+      name: form.name.trim(),
       type: form.type,
-      balance: parseFloat(form.balance) || 0,
-      originalBalance: parseFloat(form.originalBalance) || parseFloat(form.balance) || 0,
-      interestRate: parseFloat(form.interestRate) || 0,
-      minimumPayment: parseFloat(form.minimumPayment) || 0,
+      balance,
+      originalBalance: parseAmount(form.originalBalance) || balance,
+      interestRate: parseNumber(form.interestRate),
+      minimumPayment: parseAmount(form.minimumPayment),
       addedAt: new Date().toISOString(),
     }
     addDebt(debt)
-    setForm({ ...emptyForm })
-    setAddOpen(false)
+    batch.record({ id: debt.id, label: debt.name, amount: balance })
+    setForm({ ...emptyForm, type: form.type })
+    setFormError('')
   }
 
   const handleEdit = () => {
@@ -76,10 +95,10 @@ export function DebtTracker() {
     updateDebt(editDebt.id, {
       name: form.name,
       type: form.type,
-      balance: parseFloat(form.balance) || 0,
-      originalBalance: parseFloat(form.originalBalance) || parseFloat(form.balance) || 0,
-      interestRate: parseFloat(form.interestRate) || 0,
-      minimumPayment: parseFloat(form.minimumPayment) || 0,
+      balance: parseAmount(form.balance),
+      originalBalance: parseAmount(form.originalBalance) || parseAmount(form.balance),
+      interestRate: parseNumber(form.interestRate),
+      minimumPayment: parseAmount(form.minimumPayment),
     })
     setEditDebt(null)
   }
@@ -111,10 +130,15 @@ export function DebtTracker() {
   // Total-debt payoff timeline for the selected strategy
   const payoffData = activePlan.schedule.filter((s, i, arr) => i % 3 === 0 || i === arr.length - 1)
 
-  const debtFormJsx = (
-    <div className="space-y-4">
+  const debtFormJsx = (adding: boolean) => (
+    <div className="space-y-4" key={adding ? batch.formKey : 'edit'}>
       <FormField label="Debt Name">
-        <Input placeholder="Chase Sapphire, Car Loan…" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+        <Input
+          placeholder="Chase Sapphire, Car Loan…"
+          autoFocus={adding && batch.added.length > 0}
+          value={form.name}
+          onChange={e => { setForm(f => ({ ...f, name: e.target.value })); setFormError('') }}
+        />
       </FormField>
       <FormField label="Type">
         <Select value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value as Debt['type'] }))}>
@@ -123,18 +147,19 @@ export function DebtTracker() {
       </FormField>
       <div className="grid grid-cols-2 gap-3">
         <FormField label="Current Balance ($)">
-          <Input type="number" placeholder="0.00" value={form.balance} onChange={e => setForm(f => ({ ...f, balance: e.target.value }))} />
+          <MoneyInput value={form.balance} onChange={v => { setForm(f => ({ ...f, balance: v })); setFormError('') }} onEnter={adding ? handleAdd : undefined} />
         </FormField>
         <FormField label="Original Balance ($)">
-          <Input type="number" placeholder="0.00" value={form.originalBalance} onChange={e => setForm(f => ({ ...f, originalBalance: e.target.value }))} />
+          <MoneyInput value={form.originalBalance} onChange={v => setForm(f => ({ ...f, originalBalance: v }))} onEnter={adding ? handleAdd : undefined} />
         </FormField>
         <FormField label="Interest Rate (%)">
-          <Input type="number" placeholder="0.00" value={form.interestRate} onChange={e => setForm(f => ({ ...f, interestRate: e.target.value }))} />
+          <MoneyInput prefix="" money={false} value={form.interestRate} onChange={v => setForm(f => ({ ...f, interestRate: v }))} onEnter={adding ? handleAdd : undefined} />
         </FormField>
         <FormField label="Min. Monthly Payment ($)">
-          <Input type="number" placeholder="0.00" value={form.minimumPayment} onChange={e => setForm(f => ({ ...f, minimumPayment: e.target.value }))} />
+          <MoneyInput value={form.minimumPayment} onChange={v => setForm(f => ({ ...f, minimumPayment: v }))} onEnter={adding ? handleAdd : undefined} />
         </FormField>
       </div>
+      {formError && <p className="text-xs text-rose-400">{formError}</p>}
     </div>
   )
 
@@ -160,7 +185,7 @@ export function DebtTracker() {
       <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
           <h3 className="font-semibold text-white">Debts</h3>
-          <Button size="sm" onClick={() => { setForm({ ...emptyForm }); setAddOpen(true) }}><Plus size={14} /> Add Debt</Button>
+          <Button size="sm" onClick={openAdd}><Plus size={14} /> Add Debt</Button>
         </div>
         <div className="divide-y divide-gray-800">
           {debts.map(debt => {
@@ -292,14 +317,24 @@ export function DebtTracker() {
         open={addOpen}
         onClose={() => { setAddOpen(false); setForm({ ...emptyForm }) }}
         title="Add Debt"
-        footer={<div className="flex gap-3"><Button variant="secondary" onClick={() => { setAddOpen(false); setForm({ ...emptyForm }) }} className="flex-1">Cancel</Button><Button onClick={handleAdd} className="flex-1">Add Debt</Button></div>}
-      >{debtFormJsx}</Modal>
+        footer={
+          <div className="flex gap-3">
+            <Button variant="secondary" onClick={() => { setAddOpen(false); setForm({ ...emptyForm }) }} className="flex-1 justify-center">
+              {batch.added.length > 0 ? 'Done' : 'Cancel'}
+            </Button>
+            <Button onClick={handleAdd} className="flex-1 justify-center"><Plus size={14} /> Add debt</Button>
+          </div>
+        }
+      >
+        <JustAdded items={batch.added} noun="debt" />
+        {debtFormJsx(true)}
+      </Modal>
       <Modal
         open={!!editDebt}
         onClose={() => { setEditDebt(null); setForm({ ...emptyForm }) }}
         title="Edit Debt"
         footer={<div className="flex gap-3"><Button variant="secondary" onClick={() => { setEditDebt(null); setForm({ ...emptyForm }) }} className="flex-1">Cancel</Button><Button onClick={handleEdit} className="flex-1">Save Changes</Button></div>}
-      >{debtFormJsx}</Modal>
+      >{debtFormJsx(false)}</Modal>
     </div>
   )
 }

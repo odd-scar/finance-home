@@ -139,6 +139,7 @@ export async function loadFromSupabase(userId: string): Promise<void> {
         categoryLimits:        (cloud as AppState).categoryLimits      ?? {},
         customCategories:      (cloud as AppState).customCategories    ?? [],
         budgetMode:            (cloud as AppState).budgetMode === 'zero' ? 'zero' : 'simple',
+        dismissedAlerts:       Array.isArray((cloud as AppState).dismissedAlerts) ? (cloud as AppState).dismissedAlerts : [],
       }
       // Persist locally so the app works offline after first load
       const json = JSON.stringify(state)
@@ -207,6 +208,7 @@ function defaultState(): AppState {
     categoryLimits: {},
     customCategories: [],
     budgetMode: 'simple',
+    dismissedAlerts: [],
   }
 }
 
@@ -228,6 +230,7 @@ function emptyState(): AppState {
     categoryLimits: {},
     customCategories: [],
     budgetMode: 'simple',
+    dismissedAlerts: [],
   }
 }
 
@@ -268,6 +271,7 @@ function loadState(): AppState {
       categoryLimits: parsed.categoryLimits || {},
       customCategories: parsed.customCategories || [],
       budgetMode: parsed.budgetMode === 'zero' ? 'zero' : 'simple',
+      dismissedAlerts: Array.isArray(parsed.dismissedAlerts) ? parsed.dismissedAlerts : [],
     }
   } catch {
     return defaultState()
@@ -631,6 +635,16 @@ export const removeCategoryLimit = (category: string) =>
     return { ...s, categoryLimits: limits }
   })
 
+/** Hide dashboard alerts. Only the most recent 200 keys are kept (old periods expire on their own). */
+export const dismissAlerts = (keys: string[]) =>
+  commit(s => {
+    const fresh = keys.filter(k => !s.dismissedAlerts.includes(k))
+    return fresh.length ? { ...s, dismissedAlerts: [...s.dismissedAlerts, ...fresh].slice(-200) } : s
+  })
+
+export const restoreAlerts = (keys: string[]) =>
+  commit(s => ({ ...s, dismissedAlerts: s.dismissedAlerts.filter(k => !keys.includes(k)) }))
+
 export const setBudgetMode = (mode: AppState['budgetMode']) =>
   commit(s => (s.budgetMode === mode ? s : { ...s, budgetMode: mode }))
 
@@ -709,4 +723,5 @@ export const resetToDemo = () =>
     categoryLimits: {},
     customCategories: [],
     budgetMode: 'simple',
+    dismissedAlerts: [],
   }))

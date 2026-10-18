@@ -9,6 +9,8 @@ import { Badge } from '../ui/Badge'
 import { Plus, Trash2, Edit2, Target, Calendar, TrendingUp, AlertCircle, CheckCircle } from 'lucide-react'
 import { v4 as uuid } from 'uuid'
 import { FinancialGoal } from '../../types'
+import { MoneyInput } from '../ui/MoneyInput'
+import { parseAmount } from '../../utils/mathExpr'
 
 const CATEGORIES = ['savings', 'debt_payoff', 'investment', 'purchase', 'other'] as const
 const PRIORITIES = ['low', 'medium', 'high'] as const
@@ -46,8 +48,8 @@ export function Goals() {
     const goal: FinancialGoal = {
       id: uuid(),
       name: form.name,
-      targetAmount: parseFloat(form.targetAmount) || 0,
-      currentAmount: parseFloat(form.currentAmount) || 0,
+      targetAmount: parseAmount(form.targetAmount),
+      currentAmount: parseAmount(form.currentAmount),
       targetDate: form.targetDate,
       priority: form.priority,
       category: form.category,
@@ -63,8 +65,8 @@ export function Goals() {
     if (!editGoal) return
     updateGoal(editGoal.id, {
       name: form.name,
-      targetAmount: parseFloat(form.targetAmount) || 0,
-      currentAmount: parseFloat(form.currentAmount) || 0,
+      targetAmount: parseAmount(form.targetAmount),
+      currentAmount: parseAmount(form.currentAmount),
       targetDate: form.targetDate,
       priority: form.priority,
       category: form.category,
@@ -88,10 +90,10 @@ export function Goals() {
       </FormField>
       <div className="grid grid-cols-2 gap-3">
         <FormField label="Target Amount ($)">
-          <Input type="number" placeholder="10000" value={form.targetAmount} onChange={e => setForm(f => ({ ...f, targetAmount: e.target.value }))} />
+          <MoneyInput placeholder="10000" value={form.targetAmount} onChange={v => setForm(f => ({ ...f, targetAmount: v }))} />
         </FormField>
         <FormField label="Current Amount ($)">
-          <Input type="number" placeholder="0" value={form.currentAmount} onChange={e => setForm(f => ({ ...f, currentAmount: e.target.value }))} />
+          <MoneyInput placeholder="0" value={form.currentAmount} onChange={v => setForm(f => ({ ...f, currentAmount: v }))} />
         </FormField>
         <FormField label="Target Date">
           <Input type="date" value={form.targetDate} onChange={e => setForm(f => ({ ...f, targetDate: e.target.value }))} />

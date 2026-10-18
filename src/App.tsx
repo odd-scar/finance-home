@@ -163,10 +163,10 @@ const content: Record<Tab, React.ReactNode> = {
   }
 
   const quickAddItems = [
-    { label: 'Log Expense', icon: <Wallet size={14} />, tab: 'budget' as Tab },
-    { label: 'Add Stock', icon: <TrendingUp size={14} />, tab: 'stocks' as Tab },
-    { label: 'Add Bill', icon: <Receipt size={14} />, tab: 'bills' as Tab },
-    { label: 'Add Goal', icon: <Target size={14} />, tab: 'goals' as Tab },
+    { label: 'Log Expense', icon: <Wallet size={16} />, tab: 'budget' as Tab },
+    { label: 'Add Bill', icon: <Receipt size={16} />, tab: 'bills' as Tab },
+    { label: 'Add Stock', icon: <TrendingUp size={16} />, tab: 'stocks' as Tab },
+    { label: 'Add Goal', icon: <Target size={16} />, tab: 'goals' as Tab },
   ]
 
   // ── Auth gates ──────────────────────────────────────────────────────
@@ -226,13 +226,40 @@ const content: Record<Tab, React.ReactNode> = {
       <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
       <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
         <Header activeTab={activeTab} userEmail={user.email} onSignOut={handleSignOut} onLock={lockApp} />
-        <main className="flex-1 overflow-y-auto pb-16 lg:pb-0" style={{ paddingBottom: 'calc(52px + env(safe-area-inset-bottom))' }}>
+        {/* Bottom padding clears the phone's bottom bar (incl. the raised + button) */}
+        <main className="flex-1 overflow-y-auto pb-[calc(76px+env(safe-area-inset-bottom))] lg:pb-0">
           {content[activeTab]}
         </main>
       </div>
 
-      {/* Quick Add floating button */}
-      <div className="fixed bottom-28 right-4 z-40 lg:bottom-6 lg:right-6">
+      {/* Quick add — phone: bottom sheet opened from the + in the bottom bar */}
+      {quickAddOpen && (
+        <div className="lg:hidden">
+          <div className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={() => setQuickAddOpen(false)} />
+          <div
+            className="fixed left-0 right-0 z-50 bg-gray-900 border-t border-gray-800 rounded-t-2xl shadow-2xl animate-slide-up p-4"
+            style={{ bottom: 'calc(52px + env(safe-area-inset-bottom))' }}
+          >
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide px-1 mb-2">Add</p>
+            <div className="grid grid-cols-2 gap-2">
+              {quickAddItems.map(item => (
+                <button
+                  key={item.tab}
+                  type="button"
+                  onClick={() => { setActiveTab(item.tab); setQuickAddOpen(false) }}
+                  className="flex items-center gap-3 px-4 py-4 bg-gray-800 hover:bg-gray-700 active:scale-[0.98] rounded-xl text-left transition-all"
+                >
+                  <span className="p-2 rounded-lg bg-brand-600/20 text-brand-400">{item.icon}</span>
+                  <span className="text-sm font-medium text-white">{item.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Quick Add floating button — desktop only (phones use the + in the bottom bar) */}
+      <div className="hidden lg:block fixed bottom-6 right-6 z-40">
         {/* Dropdown menu */}
         {quickAddOpen && (
           <>
@@ -275,7 +302,12 @@ const content: Record<Tab, React.ReactNode> = {
       </div>
 
       {/* Bottom nav for mobile */}
-      <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
+      <BottomNav
+        activeTab={activeTab}
+        onTabChange={tab => { setQuickAddOpen(false); setActiveTab(tab) }}
+        onQuickAdd={() => setQuickAddOpen(o => !o)}
+        quickAddOpen={quickAddOpen}
+      />
 
       {/* First-time onboarding tour */}
       {showOnboarding && (

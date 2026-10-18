@@ -25,7 +25,7 @@ import {
 import {
   state, resetToDemo, addBudgetEntry, rolloverRecurringEntries,
   loadFromSupabase, signOutCleanup, addGoal, addCustomCategory, removeCustomCategory, flushSync,
-  setCategoryLimit, moveBudgetPlan, setBudgetMode,
+  setCategoryLimit, moveBudgetPlan, setBudgetMode, dismissAlerts, restoreAlerts,
 } from '../../store/store'
 import { clearAppCache } from '../appCache'
 import type { BudgetEntry } from '../../types'
@@ -212,6 +212,21 @@ describe('rollover keeps the day of the month for dated recurring entries', () =
     addBudgetEntry(entry('rd', 1, 2095, { type: 'expense', category: 'Rent/Mortgage', description: 'Rent', date: '2095-01-31' }))
     rolloverRecurringEntries(2, 2095)
     expect(state.budget.find(b => b.month === 2 && b.year === 2095)?.date).toBe('2095-02-28')
+  })
+})
+
+describe('dashboard alert dismissals', () => {
+  beforeEach(() => resetToDemo())
+
+  it('dismisses, de-duplicates, restores, and keeps at most 200 keys', () => {
+    dismissAlerts(['bill:x:2026-11-01', 'budget:Groceries:2026-10:near'])
+    dismissAlerts(['bill:x:2026-11-01'])
+    expect(state.dismissedAlerts).toEqual(['bill:x:2026-11-01', 'budget:Groceries:2026-10:near'])
+    restoreAlerts(['bill:x:2026-11-01'])
+    expect(state.dismissedAlerts).toEqual(['budget:Groceries:2026-10:near'])
+    dismissAlerts(Array.from({ length: 250 }, (_, i) => `k${i}`))
+    expect(state.dismissedAlerts).toHaveLength(200)
+    expect(state.dismissedAlerts[199]).toBe('k249') // newest kept
   })
 })
 

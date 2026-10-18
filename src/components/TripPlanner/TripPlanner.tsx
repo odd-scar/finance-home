@@ -7,9 +7,13 @@ import { Button, Input, FormField, Select } from '../ui/FormField'
 import { ProgressBar } from '../ui/ProgressBar'
 import { Badge } from '../ui/Badge'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts'
-import { Plus, Trash2, Edit2, Plane, MapPin, Calendar, DollarSign, ChevronRight } from 'lucide-react'
+import { Plus, Trash2, Edit2, Plane, MapPin, Calendar, DollarSign, ChevronRight, Sparkles } from 'lucide-react'
 import { v4 as uuid } from 'uuid'
 import { Trip, TripExpense } from '../../types'
+import { MoneyInput } from '../ui/MoneyInput'
+import { useBatchAdd, JustAdded } from '../ui/BatchAdd'
+import { parseAmount } from '../../utils/mathExpr'
+import { TripAssistant } from './TripAssistant'
 
 const TOOLTIP_STYLE = {
   backgroundColor: '#1f2937', border: '1px solid #374151',
@@ -38,7 +42,17 @@ export function TripPlanner() {
   const [editExpData, setEditExpData] = useState<TripExpense | null>(null)
   const [tripForm, setTripForm] = useState({ ...emptyTripForm })
   const [expForm, setExpForm] = useState({ ...emptyExpForm })
+  const [expError, setExpError] = useState('')
   const [affordCalc, setAffordCalc] = useState<string>('')
+  const batch = useBatchAdd()
+  const [assistantOpen, setAssistantOpen] = useState(false)
+
+  const openAddExp = () => {
+    setExpForm({ ...emptyExpForm })
+    setExpError('')
+    batch.reset()
+    setAddExpOpen(true)
+  }
 
   const totalSavings = savings.reduce((s, a) => s + a.balance, 0)
 
@@ -49,7 +63,7 @@ export function TripPlanner() {
       destination: tripForm.destination,
       startDate: tripForm.startDate,
       endDate: tripForm.endDate,
-      totalBudget: parseFloat(tripForm.totalBudget) || 0,
+      totalBudget: parseAmount(tripForm.totalBudget),
       expenses: [],
       addedAt: new Date().toISOString(),
     }
@@ -63,7 +77,7 @@ export function TripPlanner() {
     updateTrip(editTripData.id, {
       name: tripForm.name, destination: tripForm.destination,
       startDate: tripForm.startDate, endDate: tripForm.endDate,
-      totalBudget: parseFloat(tripForm.totalBudget) || 0,
+      totalBudget: parseAmount(tripForm.totalBudget),
     })
     setEditTripData(null)
   }
@@ -73,18 +87,26 @@ export function TripPlanner() {
     setTripForm({ name: t.name, destination: t.destination, startDate: t.startDate, endDate: t.endDate, totalBudget: String(t.totalBudget) })
   }
 
+  // Add and stay open for the next one — keeps the chosen category, clears the rest
   const handleAddExp = () => {
     if (!selectedTrip) return
+    const budgeted = parseAmount(expForm.budgeted)
+    const actual = parseAmount(expForm.actual)
+    if (!expForm.description.trim() && budgeted === 0 && actual === 0) {
+      setExpError('Add a description or an amount.')
+      return
+    }
     const expense: TripExpense = {
       id: uuid(),
       category: expForm.category,
-      description: expForm.description,
-      budgeted: parseFloat(expForm.budgeted) || 0,
-      actual: parseFloat(expForm.actual) || 0,
+      description: expForm.description.trim(),
+      budgeted,
+      actual,
     }
     addTripExpense(selectedTrip.id, expense)
-    setExpForm({ ...emptyExpForm })
-    setAddExpOpen(false)
+    batch.record({ id: expense.id, label: expense.description || catLabels[expense.category], amount: budgeted || actual })
+    setExpForm({ ...emptyExpForm, category: expForm.category })
+    setExpError('')
   }
 
   const handleEditExp = () => {
@@ -92,8 +114,8 @@ export function TripPlanner() {
     updateTripExpense(selectedTrip.id, editExpData.id, {
       category: expForm.category,
       description: expForm.description,
-      budgeted: parseFloat(expForm.budgeted) || 0,
-      actual: parseFloat(expForm.actual) || 0,
+      budgeted: parseAmount(expForm.budgeted),
+      actual: parseAmount(expForm.actual),
     })
     setEditExpData(null)
   }
@@ -124,24 +146,39 @@ export function TripPlanner() {
         <FormField label="Start Date"><Input type="date" value={tripForm.startDate} onChange={e => setTripForm(f => ({ ...f, startDate: e.target.value }))} /></FormField>
         <FormField label="End Date"><Input type="date" value={tripForm.endDate} onChange={e => setTripForm(f => ({ ...f, endDate: e.target.value }))} /></FormField>
       </div>
-      <FormField label="Total Budget ($)"><Input type="number" placeholder="5000" value={tripForm.totalBudget} onChange={e => setTripForm(f => ({ ...f, totalBudget: e.target.value }))} /></FormField>
+      <FormField label="Total Budget ($)" hint="You can type a sum, e.g. 1200+800">
+        <MoneyInput placeholder="5000" value={tripForm.totalBudget} onChange={v => setTripForm(f => ({ ...f, totalBudget: v }))} />
+      </FormField>
     </div>
   )
 
-  const expFormJsx = (
-    <div className="space-y-4">
+  // `adding` = the keep-adding form (Enter adds); editing a single expense doesn't need that
+  const expFormJsx = (adding: boolean) => (
+    <div className="space-y-4" key={adding ? batch.formKey : 'edit'}>
       <FormField label="Category">
         <Select value={expForm.category} onChange={e => setExpForm(f => ({ ...f, category: e.target.value as TripExpense['category'] }))}>
           {EXP_CATS.map(c => <option key={c} value={c}>{catLabels[c]}</option>)}
         </Select>
       </FormField>
-      <FormField label="Description"><Input placeholder="Round trip flights…" value={expForm.description} onChange={e => setExpForm(f => ({ ...f, description: e.target.value }))} /></FormField>
+      <FormField label="Description">
+        <Input
+          placeholder="Round trip flights…"
+          autoFocus={adding && batch.added.length > 0}
+          value={expForm.description}
+          onChange={e => { setExpForm(f => ({ ...f, description: e.target.value })); setExpError('') }}
+          onKeyDown={e => { if (adding && e.key === 'Enter') handleAddExp() }}
+        />
+      </FormField>
       <div className="grid grid-cols-2 gap-3">
-        <FormField label="Budgeted ($)"><Input type="number" placeholder="0" value={expForm.budgeted} onChange={e => setExpForm(f => ({ ...f, budgeted: e.target.value }))} /></FormField>
-        <FormField label="Actual Spent ($)" hint="Leave 0 if not yet spent">
-          <Input type="number" placeholder="0" value={expForm.actual} onChange={e => setExpForm(f => ({ ...f, actual: e.target.value }))} />
+        <FormField label="Budgeted ($)">
+          <MoneyInput placeholder="0" value={expForm.budgeted} onChange={v => { setExpForm(f => ({ ...f, budgeted: v })); setExpError('') }} onEnter={adding ? handleAddExp : undefined} />
+        </FormField>
+        <FormField label="Actual Spent ($)">
+          <MoneyInput placeholder="0" value={expForm.actual} onChange={v => setExpForm(f => ({ ...f, actual: v }))} onEnter={adding ? handleAddExp : undefined} />
         </FormField>
       </div>
+      <p className="text-xs text-gray-500">Tip: add amounts right in the box — e.g. <span className="text-gray-300">450+380</span> for a round trip.</p>
+      {expError && <p className="text-xs text-rose-400">{expError}</p>}
     </div>
   )
 
@@ -162,14 +199,14 @@ export function TripPlanner() {
             </h4>
             <div className="flex gap-3 items-end">
               <FormField label="Trip cost ($)" hint={`Your total savings: ${formatCurrency(totalSavings)}`}>
-                <Input type="number" placeholder="5000" value={affordCalc} onChange={e => setAffordCalc(e.target.value)} />
+                <MoneyInput placeholder="5000" value={affordCalc} onChange={setAffordCalc} />
               </FormField>
               <div className="pb-0.5">
                 {affordCalc && (
-                  <div className={`px-4 py-2 rounded-xl text-sm font-medium ${parseFloat(affordCalc) <= totalSavings * 0.3 ? 'bg-emerald-500/20 text-emerald-400' : parseFloat(affordCalc) <= totalSavings * 0.6 ? 'bg-amber-500/20 text-amber-400' : 'bg-rose-500/20 text-rose-400'}`}>
-                    {parseFloat(affordCalc) <= totalSavings * 0.3
+                  <div className={`px-4 py-2 rounded-xl text-sm font-medium ${parseAmount(affordCalc) <= totalSavings * 0.3 ? 'bg-emerald-500/20 text-emerald-400' : parseAmount(affordCalc) <= totalSavings * 0.6 ? 'bg-amber-500/20 text-amber-400' : 'bg-rose-500/20 text-rose-400'}`}>
+                    {parseAmount(affordCalc) <= totalSavings * 0.3
                       ? '✓ Comfortably affordable'
-                      : parseFloat(affordCalc) <= totalSavings * 0.6
+                      : parseAmount(affordCalc) <= totalSavings * 0.6
                       ? '⚠ Stretch but possible'
                       : '✗ Would strain savings'}
                   </div>
@@ -256,11 +293,15 @@ export function TripPlanner() {
                   <h2 className="text-lg sm:text-xl font-bold text-white truncate">{trip.name}</h2>
                   <p className="text-sm text-gray-400 flex items-center gap-1"><MapPin size={12} />{trip.destination}</p>
                 </div>
-                <div className="flex gap-2 shrink-0">
-                  <Button size="sm" variant="secondary" onClick={() => openEditTrip(trip)}>
-                    <Edit2 size={13} /> Edit Trip
+                {/* Full-width row under the title on phones so the trip name isn't squeezed */}
+                <div className="flex gap-2 w-full sm:w-auto sm:shrink-0">
+                  <Button size="sm" variant="secondary" onClick={() => openEditTrip(trip)} className="flex-1 sm:flex-none justify-center">
+                    <Edit2 size={13} /> Edit
                   </Button>
-                  <Button size="sm" onClick={() => { setExpForm({ ...emptyExpForm }); setAddExpOpen(true) }}>
+                  <Button size="sm" variant="secondary" onClick={() => setAssistantOpen(true)} className="flex-1 sm:flex-none justify-center !text-amber-300">
+                    <Sparkles size={13} /> Ask AI
+                  </Button>
+                  <Button size="sm" onClick={openAddExp} className="flex-1 sm:flex-none justify-center">
                     <Plus size={13} /> Add Expense
                   </Button>
                 </div>
@@ -348,18 +389,42 @@ export function TripPlanner() {
         title="Edit Trip"
         footer={<div className="flex gap-3"><Button variant="secondary" onClick={() => { setEditTripData(null); setTripForm({ ...emptyTripForm }) }} className="flex-1">Cancel</Button><Button onClick={handleEditTrip} className="flex-1">Save</Button></div>}
       >{tripFormJsx}</Modal>
+      {selectedTrip && (
+        <TripAssistant
+          open={assistantOpen}
+          onClose={() => setAssistantOpen(false)}
+          trip={getTrip(selectedTrip.id) ?? selectedTrip}
+          onAdd={item => addTripExpense(selectedTrip.id, {
+            id: uuid(),
+            category: item.category,
+            description: item.title,
+            budgeted: item.estimatedCost,
+            actual: 0,
+          })}
+        />
+      )}
       <Modal
         open={addExpOpen}
         onClose={() => { setAddExpOpen(false); setExpForm({ ...emptyExpForm }) }}
-        title="Add Expense"
-        footer={<div className="flex gap-3"><Button variant="secondary" onClick={() => { setAddExpOpen(false); setExpForm({ ...emptyExpForm }) }} className="flex-1">Cancel</Button><Button onClick={handleAddExp} className="flex-1">Save</Button></div>}
-      >{expFormJsx}</Modal>
+        title="Add Expenses"
+        footer={
+          <div className="flex gap-3">
+            <Button variant="secondary" onClick={() => { setAddExpOpen(false); setExpForm({ ...emptyExpForm }) }} className="flex-1 justify-center">
+              {batch.added.length > 0 ? 'Done' : 'Cancel'}
+            </Button>
+            <Button onClick={handleAddExp} className="flex-1 justify-center"><Plus size={14} /> Add expense</Button>
+          </div>
+        }
+      >
+        <JustAdded items={batch.added} noun="expense" />
+        {expFormJsx(true)}
+      </Modal>
       <Modal
         open={!!editExpData}
         onClose={() => { setEditExpData(null); setExpForm({ ...emptyExpForm }) }}
         title="Edit Expense"
-        footer={<div className="flex gap-3"><Button variant="secondary" onClick={() => { setEditExpData(null); setExpForm({ ...emptyExpForm }) }} className="flex-1">Cancel</Button><Button onClick={handleEditExp} className="flex-1">Save</Button></div>}
-      >{expFormJsx}</Modal>
+        footer={<div className="flex gap-3"><Button variant="secondary" onClick={() => { setEditExpData(null); setExpForm({ ...emptyExpForm }) }} className="flex-1 justify-center">Cancel</Button><Button onClick={handleEditExp} className="flex-1 justify-center">Save</Button></div>}
+      >{expFormJsx(false)}</Modal>
     </div>
   )
 }

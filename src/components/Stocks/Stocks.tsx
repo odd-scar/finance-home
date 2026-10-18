@@ -1,7 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useAppStore } from '../../hooks/useAppStore'
-import { formatCurrency, formatPercent, calcPctChange, linearRegression } from '../../utils/finance'
-import { simulateRefresh, getStockInfo, generatePriceHistory } from '../../utils/mockStockData'
+import { formatCurrency, formatPercent, calcPctChange } from '../../utils/finance'
+import { simulateRefresh, getStockInfo } from '../../utils/mockStockData'
+import { analyzeStock, analyzePortfolio, portfolioInsights } from '../../utils/stockAnalysis'
+import { useHistories, BENCHMARK } from '../../utils/stockHistory'
+import { CompanyAnalysis, InsightList } from './CompanyAnalysis'
+import { parseAmount } from '../../utils/mathExpr'
 import {
   fetchQuotes, getCacheAge,
   type FetchStatus, type QuoteResult,
@@ -10,11 +14,11 @@ import { refreshStockPrices, addStock, removeStock, updateStock } from '../../st
 import { Modal } from '../ui/Modal'
 import { Button, Input, FormField } from '../ui/FormField'
 import { Card } from '../ui/Card'
-import { LineChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis, PieChart, Pie, Cell } from 'recharts'
+import { LineChart, Line, ResponsiveContainer, Tooltip, PieChart, Pie, Cell } from 'recharts'
 import {
   Plus, Trash2, TrendingUp, TrendingDown,
   Star, AlertTriangle, CheckCircle, Clock,
-  RefreshCw, Loader2, Edit2,
+  RefreshCw, Loader2, Edit2, Search, ShieldCheck, X,
 } from 'lucide-react'
 import { v4 as uuid } from 'uuid'
 import { Stock } from '../../types'
@@ -36,23 +40,6 @@ function Sparkline({ data, positive }: { data: number[]; positive: boolean }) {
     <ResponsiveContainer width={80} height={36}>
       <LineChart data={chartData}>
         <Line type="monotone" dataKey="v" stroke={positive ? '#10b981' : '#f43f5e'} strokeWidth={1.5} dot={false} />
-      </LineChart>
-    </ResponsiveContainer>
-  )
-}
-
-function StockDetailChart({ stock }: { stock: Stock }) {
-  const data = stock.priceHistory.map((v, i) => ({ day: i + 1, price: v }))
-  const reg = linearRegression(stock.priceHistory)
-  const merged = data.map((d, i) => ({ ...d, trend: Math.round(reg.predict(i) * 100) / 100 }))
-  return (
-    <ResponsiveContainer width="100%" height={200}>
-      <LineChart data={merged}>
-        <XAxis dataKey="day" tick={{ fill: '#9ca3af', fontSize: 10 }} axisLine={false} tickLine={false} label={{ value: 'Trading Days', position: 'insideBottom', offset: -2, fill: '#6b7280', fontSize: 10 }} height={36} />
-        <YAxis tick={{ fill: '#9ca3af', fontSize: 10 }} axisLine={false} tickLine={false} domain={['auto', 'auto']} tickFormatter={v => `$${v}`} />
-        <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v: number, name: string) => [formatCurrency(v), name === 'trend' ? 'Trend' : 'Price']} />
-        <Line type="monotone" dataKey="price" stroke="#6366f1" strokeWidth={2} dot={false} name="Price" />
-        <Line type="monotone" dataKey="trend" stroke="#f59e0b" strokeWidth={1.5} dot={false} strokeDasharray="4 2" name="Trend" />
       </LineChart>
     </ResponsiveContainer>
   )
@@ -100,6 +87,39 @@ export function Stocks() {
   // Sorted copy for the legend — does NOT mutate pieData so pie slice colors stay stable
   const pieDataSorted = [...pieData].sort((a, b) => b.value - a.value)
 
+  // ── Analysis from real 1-year daily prices (+ S&P 500 benchmark) ──────
+  const [research, setResearch] = useState<{ symbol: string; price: number | null } | null>(null)
+  const [researchInput, setResearchInput] = useState('')
+  const [researchLoading, setResearchLoading] = useState(false)
+  const { histories } = useHistories([...stocks.map(s => s.symbol), ...(research ? [research.symbol] : [])])
+  const bench = histories[BENCHMARK] ?? null
+  const benchMetrics = bench ? analyzeStock(bench) : null
+  const fundByName = new Set(stocks.filter(s => /\b(ETF|Fund|Trust|Index)\b/i.test(s.name)).map(s => s.symbol))
+  const portfolio = analyzePortfolio(
+    ownedStocks.map(s => ({ symbol: s.symbol, value: s.shares * s.currentPrice })),
+    histories,
+    bench,
+    sym => fundByName.has(sym)
+  )
+  const portfolioNotes = portfolioInsights(portfolio, benchMetrics, ownedStocks.length)
+  const weightOf = (s: Stock) => (!s.watchlist && totalValue > 0 ? (s.shares * s.currentPrice) / totalValue : null)
+
+  // Research any company (owned or not): grab a live price for valuation, then open the analysis
+  const openResearch = async () => {
+    const sym = researchInput.toUpperCase().trim()
+    if (!/^[A-Z0-9.\-]{1,10}$/.test(sym)) return
+    const owned = stocks.find(s => s.symbol === sym)
+    if (owned) { setSelected(owned); setResearchInput(''); return }
+    setResearchLoading(true)
+    let price: number | null = null
+    try { price = (await fetchQuotes([sym])).quotes[sym]?.price ?? null } catch { /* analysis still works without valuation */ }
+    setResearchLoading(false)
+    setResearch({ symbol: sym, price })
+    setResearchInput('')
+  }
+  /** Sparkline: last ~6 weeks of real closes when available, else the refresh log */
+  const sparkData = (s: Stock) => histories[s.symbol]?.closes.slice(-30) ?? s.priceHistory.slice(-13)
+
   // Turn live quotes into store updates. A quote for the same trading day we already
   // recorded replaces the last history point instead of appending a duplicate, so
   // re-opening the tab or hitting refresh doesn't distort the chart or day change.
@@ -135,6 +155,13 @@ export function Stocks() {
     }
     setRefreshing(false)
   }
+
+  // A success message doesn't need to stay; failures stay until closed
+  useEffect(() => {
+    if (!fetchStatus || fetchStatus.failed.length > 0) return
+    const t = setTimeout(() => setFetchStatus(null), 4000)
+    return () => clearTimeout(t)
+  }, [fetchStatus])
 
   // Cooldown countdown
   useEffect(() => {
@@ -178,7 +205,7 @@ export function Stocks() {
     } catch { /* offline — fall back to mock */ }
     const currentPrice = live && live.price > 0 ? live.price : info.currentPrice
     const shares = parseFloat(form.shares) || 0
-    const purchasePrice = parseFloat(form.purchasePrice) || currentPrice
+    const purchasePrice = parseAmount(form.purchasePrice) || currentPrice
     const stock: Stock = {
       id: uuid(),
       symbol: sym,
@@ -186,7 +213,7 @@ export function Stocks() {
       shares,
       purchasePrice,
       currentPrice,
-      priceHistory: generatePriceHistory(sym, currentPrice),
+      priceHistory: [currentPrice], // real history comes from /api/history -- never invent prices
       watchlist: form.watchlist || shares === 0,
       addedAt: new Date().toISOString(),
       ...(live && live.price > 0 ? { lastQuoteDay: live.latestTradingDay, dayChangePct: live.changePercent } : {}),
@@ -218,15 +245,18 @@ export function Stocks() {
 
       {/* Fetch status notification */}
       {fetchStatus && (
-        <div className={`flex items-center gap-2 p-3 rounded-xl border text-sm ${
+        <div className={`flex items-center gap-2 pl-3 pr-1 py-1 rounded-xl border text-sm ${
           fetchStatus.failed.length > 0
             ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
             : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
         }`}>
           {fetchStatus.failed.length > 0
-            ? <><AlertTriangle size={14} /> {fetchStatus.success.length} updated · {fetchStatus.cached.length} from cache · {fetchStatus.failed.length} failed</>
-            : <><CheckCircle size={14} /> Prices up to date · {fetchStatus.cached.length > 0 ? `${fetchStatus.cached.length} from cache` : `${fetchStatus.success.length} live`}</>
+            ? <><AlertTriangle size={14} className="shrink-0" /><span className="flex-1">Couldn't update {fetchStatus.failed.length} {fetchStatus.failed.length === 1 ? 'price' : 'prices'} — showing the last known {fetchStatus.failed.length === 1 ? 'price' : 'prices'}.</span></>
+            : <><CheckCircle size={14} className="shrink-0" /><span className="flex-1">Prices up to date</span></>
           }
+          <button type="button" onClick={() => setFetchStatus(null)} aria-label="Dismiss" className="p-2 opacity-70 hover:opacity-100">
+            <X size={15} />
+          </button>
         </div>
       )}
 
@@ -263,6 +293,46 @@ export function Stocks() {
           </Button>
         </div>
       </div>
+
+      {/* Research any company */}
+      <form
+        onSubmit={e => { e.preventDefault(); void openResearch() }}
+        className="flex items-center gap-2"
+      >
+        <div className="relative flex-1">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+          <input
+            type="text"
+            placeholder="Research a company…"
+            value={researchInput}
+            onChange={e => setResearchInput(e.target.value.toUpperCase())}
+            className="w-full bg-gray-900 border border-gray-700 rounded-xl pl-8 pr-3 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-brand-500"
+            style={{ fontSize: '16px' }}
+            autoCapitalize="characters"
+            autoCorrect="off"
+          />
+        </div>
+        <Button size="sm" type="submit" disabled={!researchInput.trim() || researchLoading}>
+          {researchLoading ? <Loader2 size={13} className="animate-spin" /> : 'Analyze'}
+        </Button>
+      </form>
+
+      {/* Portfolio check — only shown when there's something worth flagging */}
+      {ownedStocks.length > 0 && (portfolioNotes.length > 0 || portfolio.return1Y !== null) && (
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 space-y-2.5">
+          <div className="flex items-center gap-2">
+            <ShieldCheck size={15} className="text-brand-400" />
+            <h3 className="text-sm font-semibold text-white flex-1">Portfolio check</h3>
+            {portfolio.return1Y !== null && benchMetrics?.return1Y != null && (
+              <span className="text-xs text-gray-400">
+                Past year <span className={portfolio.return1Y >= 0 ? 'text-emerald-400' : 'text-rose-400'}>{portfolio.return1Y >= 0 ? '+' : ''}{(portfolio.return1Y * 100).toFixed(1)}%</span>
+                {' '}vs S&P {benchMetrics.return1Y >= 0 ? '+' : ''}{(benchMetrics.return1Y * 100).toFixed(1)}%
+              </span>
+            )}
+          </div>
+          <InsightList items={portfolioNotes} />
+        </div>
+      )}
 
       {/* Holdings table */}
       <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
@@ -317,7 +387,7 @@ export function Stocks() {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <Sparkline data={stock.priceHistory.slice(-13)} positive={allTimePct >= 0} />
+                      <Sparkline data={sparkData(stock)} positive={allTimePct >= 0} />
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex gap-1">
@@ -489,7 +559,7 @@ export function Stocks() {
                       {todayPct >= 0 ? '+' : ''}{todayPct.toFixed(2)}% today
                     </p>
                   </div>
-                  <Sparkline data={stock.priceHistory.slice(-13)} positive={todayPct >= 0} />
+                  <Sparkline data={sparkData(stock)} positive={todayPct >= 0} />
                 </div>
                 <button
                   type="button"
@@ -558,7 +628,7 @@ export function Stocks() {
                 if (!moveStock) return
                 const shares = parseFloat(moveForm.shares)
                 if (!shares || shares <= 0) return
-                const purchasePrice = parseFloat(moveForm.purchasePrice) || moveStock.currentPrice
+                const purchasePrice = parseAmount(moveForm.purchasePrice) || moveStock.currentPrice
                 updateStock(moveStock.id, { watchlist: false, shares, purchasePrice })
                 setMoveStock(null)
               }}
@@ -608,7 +678,7 @@ export function Stocks() {
                 if (!editStock) return
                 const shares = parseFloat(editStockForm.shares)
                 if (!shares || shares <= 0) return
-                const purchasePrice = parseFloat(editStockForm.purchasePrice) || editStock.purchasePrice
+                const purchasePrice = parseAmount(editStockForm.purchasePrice) || editStock.purchasePrice
                 updateStock(editStock.id, { shares, purchasePrice })
                 setEditStock(null)
               }}
@@ -683,32 +753,63 @@ export function Stocks() {
                 </p>
               </div>
             </div>
-            <div>
-              <p className="text-xs text-gray-500 mb-2">Price History + Linear Trend</p>
-              <StockDetailChart stock={selectedStock} />
-            </div>
-            <div className="bg-gray-800 rounded-xl p-3">
-              <p className="text-xs text-gray-400 mb-2">Trend Prediction — next 5 data points</p>
-              {(() => {
-                const reg = linearRegression(selectedStock.priceHistory)
-                const n = selectedStock.priceHistory.length
-                return (
-                  <div className="flex gap-3">
-                    {[1, 2, 3, 4, 5].map(i => {
-                      const p = reg.predict(n - 1 + i)
-                      return (
-                        <div key={i} className="flex-1 text-center">
-                          <p className="text-xs text-gray-500">+{i}</p>
-                          <p className={`text-sm font-medium ${p >= selectedStock.currentPrice ? 'text-emerald-400' : 'text-rose-400'}`}>
-                            {formatCurrency(p)}
-                          </p>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )
-              })()}
-            </div>
+            <CompanyAnalysis
+              symbol={selectedStock.symbol}
+              price={selectedStock.currentPrice}
+              history={histories[selectedStock.symbol] ?? null}
+              bench={benchMetrics}
+              weight={weightOf(selectedStock)}
+            />
+          </div>
+        )}
+      </Modal>
+
+      {/* ── Research Modal (a company you don't own yet) ──────────────── */}
+      <Modal
+        open={!!research}
+        onClose={() => setResearch(null)}
+        title={research ? `${research.symbol}${histories[research.symbol]?.name ? ` — ${histories[research.symbol]!.name}` : ''}` : ''}
+        size="lg"
+        footer={research && (
+          <div className="flex gap-3">
+            <Button variant="secondary" onClick={() => setResearch(null)} className="flex-1">Close</Button>
+            <Button
+              className="flex-1"
+              onClick={() => {
+                if (!research) return
+                const info = getStockInfo(research.symbol)
+                const price = research.price ?? info.currentPrice
+                addStock({
+                  id: uuid(),
+                  symbol: research.symbol,
+                  name: histories[research.symbol]?.name ?? info.name,
+                  shares: 0,
+                  purchasePrice: price,
+                  currentPrice: price,
+                  priceHistory: [price],
+                  watchlist: true,
+                  addedAt: new Date().toISOString(),
+                })
+                setResearch(null)
+              }}
+            >
+              <Star size={13} /> Add to watchlist
+            </Button>
+          </div>
+        )}
+      >
+        {research && (
+          <div className="space-y-4">
+            {research.price !== null && (
+              <p className="text-sm text-gray-400">Price <span className="text-white font-semibold">{formatCurrency(research.price)}</span></p>
+            )}
+            <CompanyAnalysis
+              symbol={research.symbol}
+              price={research.price}
+              history={histories[research.symbol] ?? null}
+              bench={benchMetrics}
+              weight={null}
+            />
           </div>
         )}
       </Modal>

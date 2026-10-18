@@ -6,6 +6,9 @@ import { Button, Input, FormField, Select } from '../ui/FormField'
 import { Plus, Trash2, Edit2, Car, Building, Laptop, Star, Package, Info } from 'lucide-react'
 import { v4 as uuid } from 'uuid'
 import { Asset } from '../../types'
+import { MoneyInput } from '../ui/MoneyInput'
+import { useBatchAdd, JustAdded } from '../ui/BatchAdd'
+import { parseAmount } from '../../utils/mathExpr'
 
 const CATEGORIES = ['vehicle', 'real_estate', 'electronics', 'collectibles', 'other'] as const
 
@@ -48,6 +51,8 @@ export function Assets() {
   const [addOpen, setAddOpen] = useState(false)
   const [editAsset, setEditAsset] = useState<Asset | null>(null)
   const [form, setForm] = useState({ ...emptyForm })
+  const [formError, setFormError] = useState('')
+  const batch = useBatchAdd()
 
   const totalValue = assets.reduce((s, a) => s + a.value, 0)
 
@@ -56,26 +61,39 @@ export function Assets() {
     return acc
   }, {} as Record<Asset['category'], number>)
 
+  const openAdd = () => {
+    setForm({ ...emptyForm })
+    setFormError('')
+    batch.reset()
+    setAddOpen(true)
+  }
+
+  // Add and stay open for the next asset — keeps the category, clears the rest
   const handleAdd = () => {
-    if (!form.name || !form.value) return
+    const value = parseAmount(form.value)
+    if (!form.name.trim() || value <= 0) {
+      setFormError(!form.name.trim() ? 'Give the asset a name.' : 'Enter its current value.')
+      return
+    }
     const asset: Asset = {
       id: uuid(),
-      name: form.name,
-      value: parseFloat(form.value) || 0,
+      name: form.name.trim(),
+      value,
       category: form.category,
       notes: form.notes || undefined,
       addedAt: new Date().toISOString(),
     }
     addAsset(asset)
-    setForm({ ...emptyForm })
-    setAddOpen(false)
+    batch.record({ id: asset.id, label: asset.name, amount: value })
+    setForm({ ...emptyForm, category: form.category })
+    setFormError('')
   }
 
   const handleEdit = () => {
     if (!editAsset) return
     updateAsset(editAsset.id, {
       name: form.name,
-      value: parseFloat(form.value) || 0,
+      value: parseAmount(form.value),
       category: form.category,
       notes: form.notes || undefined,
     })
@@ -92,22 +110,23 @@ export function Assets() {
     })
   }
 
-  const assetFormJsx = (
-    <div className="space-y-4">
+  const assetFormJsx = (adding: boolean) => (
+    <div className="space-y-4" key={adding ? batch.formKey : 'edit'}>
       <FormField label="Asset Name">
         <Input
           placeholder="Honda Civic, MacBook Pro, Guitar…"
+          autoFocus={adding && batch.added.length > 0}
           value={form.name}
-          onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+          onChange={e => { setForm(f => ({ ...f, name: e.target.value })); setFormError('') }}
+          onKeyDown={e => { if (adding && e.key === 'Enter') handleAdd() }}
         />
       </FormField>
       <div className="grid grid-cols-2 gap-3">
         <FormField label="Current Value ($)">
-          <Input
-            type="number"
-            placeholder="0.00"
+          <MoneyInput
             value={form.value}
-            onChange={e => setForm(f => ({ ...f, value: e.target.value }))}
+            onChange={v => { setForm(f => ({ ...f, value: v })); setFormError('') }}
+            onEnter={adding ? handleAdd : undefined}
           />
         </FormField>
         <FormField label="Category">
@@ -126,8 +145,10 @@ export function Assets() {
           placeholder="Any notes about this asset…"
           value={form.notes}
           onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+          onKeyDown={e => { if (adding && e.key === 'Enter') handleAdd() }}
         />
       </FormField>
+      {formError && <p className="text-xs text-rose-400">{formError}</p>}
     </div>
   )
 
@@ -161,7 +182,7 @@ export function Assets() {
       {/* Header + Add */}
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-white">Asset List</h2>
-        <Button onClick={() => { setForm({ ...emptyForm }); setAddOpen(true) }}>
+        <Button onClick={openAdd}>
           <Plus size={14} /> Add Asset
         </Button>
       </div>
@@ -228,15 +249,25 @@ export function Assets() {
         onClose={() => { setAddOpen(false); setForm({ ...emptyForm }) }}
         title="Add Asset"
         size="lg"
-        footer={<div className="flex gap-3"><Button variant="secondary" onClick={() => { setAddOpen(false); setForm({ ...emptyForm }) }} className="flex-1">Cancel</Button><Button onClick={handleAdd} className="flex-1">Add Asset</Button></div>}
-      >{assetFormJsx}</Modal>
+        footer={
+          <div className="flex gap-3">
+            <Button variant="secondary" onClick={() => { setAddOpen(false); setForm({ ...emptyForm }) }} className="flex-1 justify-center">
+              {batch.added.length > 0 ? 'Done' : 'Cancel'}
+            </Button>
+            <Button onClick={handleAdd} className="flex-1 justify-center"><Plus size={14} /> Add asset</Button>
+          </div>
+        }
+      >
+        <JustAdded items={batch.added} noun="asset" />
+        {assetFormJsx(true)}
+      </Modal>
       <Modal
         open={!!editAsset}
         onClose={() => { setEditAsset(null); setForm({ ...emptyForm }) }}
         title="Edit Asset"
         size="lg"
-        footer={<div className="flex gap-3"><Button variant="secondary" onClick={() => { setEditAsset(null); setForm({ ...emptyForm }) }} className="flex-1">Cancel</Button><Button onClick={handleEdit} className="flex-1">Save Changes</Button></div>}
-      >{assetFormJsx}</Modal>
+        footer={<div className="flex gap-3"><Button variant="secondary" onClick={() => { setEditAsset(null); setForm({ ...emptyForm }) }} className="flex-1">Cancel</Button><Button onClick={handleEdit} className="flex-1 justify-center">Save Changes</Button></div>}
+      >{assetFormJsx(false)}</Modal>
     </div>
   )
 }

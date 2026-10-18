@@ -1,14 +1,14 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useAppStore } from '../../hooks/useAppStore'
-import { formatCurrency, calcPctChange, formatPercent, daysUntilDueDay, parseLocalDate } from '../../utils/finance'
+import { formatCurrency, calcPctChange, formatPercent, daysUntilDueDay, nextDueDate, parseLocalDate } from '../../utils/finance'
 import { StatCard } from '../ui/Card'
 import { ProgressBar } from '../ui/ProgressBar'
-import { snapshotNetWorth, autoSnapshotIfNeeded } from '../../store/store'
-import { monthTotals, expensesByCategory } from '../../utils/budgetMath'
+import { snapshotNetWorth, autoSnapshotIfNeeded, dismissAlerts, restoreAlerts } from '../../store/store'
+import { monthTotals, expensesByCategory, SAVINGS_CATEGORY } from '../../utils/budgetMath'
 import {
   TrendingUp, CreditCard, PiggyBank, Target, Wallet,
   ArrowUpRight, ArrowDownRight, Camera, Package,
-  AlertTriangle, AlertCircle, CheckCircle2, CalendarClock, Bell,
+  AlertTriangle, AlertCircle, CheckCircle2, CalendarClock, Bell, X,
 } from 'lucide-react'
 import type { Bill, FinancialGoal, BudgetEntry } from '../../types'
 
@@ -47,6 +47,8 @@ function getBudgetAlerts(
 ): BudgetAlert[] {
   const byCategory = expensesByCategory(budget, bills, month, year)
   return Object.entries(categoryLimits)
+    // Saving more than planned is good news, not something to flag
+    .filter(([category]) => category !== SAVINGS_CATEGORY)
     .map(([category, limit]) => {
       const spent = byCategory[category] ?? 0
       return { category, spent, limit, pct: limit > 0 ? spent / limit : 0 }
@@ -82,99 +84,152 @@ function getGoalAlerts(goals: FinancialGoal[]): GoalAlert[] {
 
 // ── Attention panel ──────────────────────────────────────────────────────────
 
-function AttentionPanel({
-  billAlerts, budgetAlerts, goalAlerts,
-}: {
-  billAlerts: BillAlert[]
-  budgetAlerts: BudgetAlert[]
-  goalAlerts: GoalAlert[]
-}) {
-  const totalAlerts = billAlerts.length + budgetAlerts.length + goalAlerts.length
-  const isClean = totalAlerts === 0
+interface AlertItem {
+  /** Includes the period/level, so a dismissed alert returns when things change */
+  key: string
+  tone: 'rose' | 'amber' | 'sky' | 'violet'
+  icon: 'warn' | 'bill' | 'goal'
+  title: string
+  detail: string
+  right: string
+}
 
-  if (isClean) {
+const TONE = {
+  rose:   { bg: 'bg-rose-500/20',   text: 'text-rose-400' },
+  amber:  { bg: 'bg-amber-500/20',  text: 'text-amber-400' },
+  sky:    { bg: 'bg-sky-500/20',    text: 'text-sky-400' },
+  violet: { bg: 'bg-violet-500/20', text: 'text-violet-400' },
+}
+
+const ymKey = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+const isoDay = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+function buildAlerts(billAlerts: BillAlert[], budgetAlerts: BudgetAlert[], goalAlerts: GoalAlert[]): AlertItem[] {
+  const month = ymKey()
+  return [
+    ...budgetAlerts.map(a => {
+      const over = a.pct >= 1
+      return {
+        key: `budget:${a.category}:${month}:${over ? 'over' : 'near'}`,
+        tone: over ? 'rose' : 'amber',
+        icon: 'warn',
+        title: a.category,
+        detail: `${formatCurrency(a.spent)} of ${formatCurrency(a.limit)} planned`,
+        right: over ? 'Over plan' : `${Math.round(a.pct * 100)}%`,
+      } as AlertItem
+    }),
+    ...billAlerts.map(({ bill, daysUntilDue }) => ({
+      key: `bill:${bill.id}:${isoDay(nextDueDate(bill.dueDay))}`,
+      tone: 'sky',
+      icon: 'bill',
+      title: bill.name,
+      detail: daysUntilDue === 0 ? 'Due today' : daysUntilDue === 1 ? 'Due tomorrow' : `Due in ${daysUntilDue} days`,
+      right: formatCurrency(bill.amount),
+    } as AlertItem)),
+    ...goalAlerts.map(({ goal, behindBy, expectedPct, actualPct }) => ({
+      key: `goal:${goal.id}:${month}`,
+      tone: 'violet',
+      icon: 'goal',
+      title: goal.name,
+      detail: `${Math.round(actualPct * 100)}% saved · ${Math.round(expectedPct * 100)}% expected by now`,
+      right: `-${Math.round(behindBy * 100)}%`,
+    } as AlertItem)),
+  ]
+}
+
+function AttentionPanel({ alerts, dismissed }: { alerts: AlertItem[]; dismissed: string[] }) {
+  const [showHidden, setShowHidden] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+  const hiddenKeys = alerts.filter(a => dismissed.includes(a.key)).map(a => a.key)
+  const allVisible = showHidden ? alerts : alerts.filter(a => !dismissed.includes(a.key))
+  // Keep the panel short: the 3 most important first, the rest one tap away
+  const MAX = 3
+  const visible = expanded ? allVisible : allVisible.slice(0, MAX)
+  const moreCount = allVisible.length - visible.length
+  const okKey = `ok:${ymKey()}`
+
+  if (alerts.length === 0) {
+    if (dismissed.includes(okKey)) return null
     return (
-      <div className="flex items-center gap-3 px-4 py-3 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl">
+      <div className="flex items-center gap-3 pl-4 pr-1 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl">
         <CheckCircle2 size={18} className="text-emerald-400 shrink-0" />
-        <p className="text-sm text-emerald-300 font-medium">You're on track — no issues to flag this month.</p>
+        <p className="text-sm text-emerald-300 font-medium flex-1">You're on track — nothing to flag right now.</p>
+        <button type="button" onClick={() => dismissAlerts([okKey])} aria-label="Dismiss" className="p-2.5 text-emerald-400/60 hover:text-emerald-300 rounded-lg">
+          <X size={16} />
+        </button>
       </div>
+    )
+  }
+
+  if (visible.length === 0) {
+    // Everything dismissed — just a quiet way back
+    return (
+      <button type="button" onClick={() => setShowHidden(true)} className="text-xs text-gray-500 hover:text-gray-300">
+        {hiddenKeys.length} dismissed {hiddenKeys.length === 1 ? 'alert' : 'alerts'} · Show
+      </button>
     )
   }
 
   return (
     <div className="bg-gray-900 border border-amber-500/20 rounded-2xl overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-800">
+      <div className="flex items-center gap-2 pl-4 pr-2 py-2 border-b border-gray-800">
         <Bell size={15} className="text-amber-400" />
-        <h3 className="text-sm font-semibold text-white">Needs Attention</h3>
-        <span className="ml-auto text-xs bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full">
-          {totalAlerts} {totalAlerts === 1 ? 'item' : 'items'}
-        </span>
+        <h3 className="text-sm font-semibold text-white flex-1">Needs Attention</h3>
+        {showHidden && hiddenKeys.length > 0 ? (
+          <button type="button" onClick={() => { restoreAlerts(hiddenKeys); setShowHidden(false) }} className="text-xs text-brand-400 px-2 py-2">
+            Restore all
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => dismissAlerts(allVisible.map(a => a.key))}
+            className="text-xs text-gray-400 hover:text-white px-2 py-2"
+          >
+            Dismiss all
+          </button>
+        )}
       </div>
 
       <div className="divide-y divide-gray-800">
-        {/* Budget overruns */}
-        {budgetAlerts.map(a => {
-          const isOver = a.pct >= 1
+        {visible.map(a => {
+          const t = TONE[a.tone]
+          const isHidden = dismissed.includes(a.key)
+          const Icon = a.icon === 'bill' ? CalendarClock : a.icon === 'goal' ? AlertCircle : AlertTriangle
           return (
-            <div key={a.category} className="flex items-center gap-3 px-4 py-3">
-              <div className={`p-1.5 rounded-lg shrink-0 ${isOver ? 'bg-rose-500/20' : 'bg-amber-500/20'}`}>
-                <AlertTriangle size={13} className={isOver ? 'text-rose-400' : 'text-amber-400'} />
+            <div key={a.key} className={`flex items-center gap-3 pl-4 pr-1 py-2 ${isHidden ? 'opacity-50' : ''}`}>
+              <div className={`p-1.5 rounded-lg shrink-0 ${t.bg}`}>
+                <Icon size={13} className={t.text} />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-white">{a.category}</p>
-                <div className="flex items-center gap-2 mt-1">
-                  <div className="flex-1 h-1.5 bg-gray-800 rounded-full overflow-hidden">
-                    <div
-                      className={`h-1.5 rounded-full transition-all ${isOver ? 'bg-rose-500' : 'bg-amber-500'}`}
-                      style={{ width: `${Math.min(100, a.pct * 100).toFixed(0)}%` }}
-                    />
-                  </div>
-                  <span className="text-xs text-gray-500 shrink-0">
-                    {formatCurrency(a.spent)} / {formatCurrency(a.limit)}
-                  </span>
-                </div>
+                <p className="text-sm font-medium text-white truncate">{a.title}</p>
+                <p className="text-xs text-gray-500 truncate">{a.detail}</p>
               </div>
-              <span className={`text-xs font-semibold shrink-0 ${isOver ? 'text-rose-400' : 'text-amber-400'}`}>
-                {isOver ? 'Over plan' : `${Math.round(a.pct * 100)}%`}
-              </span>
+              <span className={`text-xs font-semibold shrink-0 ${t.text}`}>{a.right}</span>
+              {isHidden ? (
+                <button type="button" onClick={() => restoreAlerts([a.key])} className="px-2.5 py-2.5 text-xs text-brand-400 shrink-0">
+                  Restore
+                </button>
+              ) : (
+                <button type="button" onClick={() => dismissAlerts([a.key])} aria-label={`Dismiss ${a.title}`} className="p-2.5 text-gray-500 hover:text-white rounded-lg shrink-0">
+                  <X size={16} />
+                </button>
+              )}
             </div>
           )
         })}
-
-        {/* Bills due soon */}
-        {billAlerts.map(({ bill, daysUntilDue }) => (
-          <div key={bill.id} className="flex items-center gap-3 px-4 py-3">
-            <div className="p-1.5 bg-sky-500/20 rounded-lg shrink-0">
-              <CalendarClock size={13} className="text-sky-400" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-white">{bill.name}</p>
-              <p className="text-xs text-gray-500 mt-0.5">
-                {daysUntilDue === 0 ? 'Due today' : daysUntilDue === 1 ? 'Due tomorrow' : `Due in ${daysUntilDue} days`}
-              </p>
-            </div>
-            <span className="text-sm font-semibold text-sky-400 shrink-0">{formatCurrency(bill.amount)}</span>
-          </div>
-        ))}
-
-        {/* Off-pace goals */}
-        {goalAlerts.map(({ goal, behindBy, expectedPct, actualPct }) => (
-          <div key={goal.id} className="flex items-center gap-3 px-4 py-3">
-            <div className="p-1.5 bg-violet-500/20 rounded-lg shrink-0">
-              <AlertCircle size={13} className="text-violet-400" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-white">{goal.name}</p>
-              <p className="text-xs text-gray-500 mt-0.5">
-                {Math.round(actualPct * 100)}% saved, expected {Math.round(expectedPct * 100)}% by now
-              </p>
-            </div>
-            <span className="text-xs font-semibold text-violet-400 shrink-0">
-              -{Math.round(behindBy * 100)}% pace
-            </span>
-          </div>
-        ))}
       </div>
+
+      {moreCount > 0 && (
+        <button type="button" onClick={() => setExpanded(true)} className="w-full text-xs text-brand-400 hover:text-brand-300 py-2.5 border-t border-gray-800">
+          Show {moreCount} more
+        </button>
+      )}
+
+      {!showHidden && hiddenKeys.length > 0 && (
+        <button type="button" onClick={() => setShowHidden(true)} className="w-full text-xs text-gray-500 hover:text-gray-300 py-2 border-t border-gray-800">
+          Show {hiddenKeys.length} dismissed
+        </button>
+      )}
     </div>
   )
 }
@@ -197,7 +252,7 @@ const currentMonthStr = () => {
 }
 
 export function Dashboard() {
-  const { stocks, debts, savings, goals, budget, assets, bills, netWorthHistory, categoryLimits } = useAppStore()
+  const { stocks, debts, savings, goals, budget, assets, bills, netWorthHistory, categoryLimits, dismissedAlerts } = useAppStore()
 
   // Auto-snapshot net worth once per month on load
   useEffect(() => { autoSnapshotIfNeeded() }, [])
@@ -308,11 +363,7 @@ export function Dashboard() {
     <div className="p-4 lg:p-6 space-y-4 lg:space-y-6 animate-fade-in">
 
       {/* Needs Attention */}
-      <AttentionPanel
-        billAlerts={billAlerts}
-        budgetAlerts={budgetAlerts}
-        goalAlerts={goalAlerts}
-      />
+      <AttentionPanel alerts={buildAlerts(billAlerts, budgetAlerts, goalAlerts)} dismissed={dismissedAlerts} />
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 lg:gap-4">

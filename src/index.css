@@ -50,6 +50,23 @@
   textarea:not([class*="text-lg"]):not([class*="text-xl"]):not([class*="text-2xl"]) {
     font-size: 1rem; /* 16px — prevents iOS Safari auto-zoom */
   }
+
+  /*
+   * Thumb-sized tap targets on touch screens. Icon-only buttons/links (edit, delete,
+   * close, calendar…) are drawn small, which is fine for a mouse but easy to miss
+   * with a finger — Apple/Google recommend ~44px. This grows only the tappable box;
+   * the icon itself stays the same size, and desktop layouts are untouched.
+   */
+  @media (pointer: coarse) {
+    button:has(> svg:only-child),
+    a:has(> svg:only-child) {
+      min-width: 40px;
+      min-height: 40px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+  }
 }
 
 @layer components {

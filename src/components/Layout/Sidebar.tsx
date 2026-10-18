@@ -16,6 +16,7 @@ import {
   Cloud,
   BookOpen,
   Wallet,
+  Plus,
 } from 'lucide-react'
 
 interface NavItem {
@@ -37,16 +38,18 @@ const navItems: NavItem[] = [
   { id: 'learn', label: 'Investor Guide', icon: <BookOpen size={18} /> },
 ]
 
-// Bottom nav primary tabs (shown directly)
-const bottomNavPrimary: NavItem[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
+// Bottom nav primary tabs — two on each side of the center "+" button
+const bottomNavLeft: NavItem[] = [
+  { id: 'dashboard', label: 'Home', icon: <LayoutDashboard size={20} /> },
   { id: 'budget', label: 'Budget', icon: <Wallet size={20} /> },
+]
+const bottomNavRight: NavItem[] = [
   { id: 'stocks', label: 'Stocks', icon: <TrendingUp size={20} /> },
-  { id: 'bills', label: 'Bills', icon: <Receipt size={20} /> },
 ]
 
 // Bottom nav secondary tabs (shown in "More" sheet)
 const bottomNavMore: NavItem[] = [
+  { id: 'bills', label: 'Bills', icon: <Receipt size={24} /> },
   { id: 'debt', label: 'Debt', icon: <CreditCard size={24} /> },
   { id: 'savings', label: 'Savings', icon: <PiggyBank size={24} /> },
   { id: 'goals', label: 'Goals', icon: <Target size={24} /> },
@@ -109,9 +112,12 @@ export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
 interface BottomNavProps {
   activeTab: Tab
   onTabChange: (tab: Tab) => void
+  /** Center "+" button — opens the quick-add sheet */
+  onQuickAdd: () => void
+  quickAddOpen: boolean
 }
 
-export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
+export function BottomNav({ activeTab, onTabChange, onQuickAdd, quickAddOpen }: BottomNavProps) {
   const [moreOpen, setMoreOpen] = useState(false)
 
   const isMoreActive = bottomNavMore.some(item => item.id === activeTab)
@@ -121,38 +127,55 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
     setMoreOpen(false)
   }
 
+  const tabButton = (item: NavItem) => {
+    const isActive = activeTab === item.id && !moreOpen
+    return (
+      <button
+        key={item.id}
+        data-tour-id={item.id}
+        onClick={() => { setMoreOpen(false); onTabChange(item.id) }}
+        className={`flex-1 flex flex-col items-center justify-center gap-1 py-2 px-1 min-h-[52px] transition-colors ${
+          isActive ? 'text-brand-400' : 'text-gray-500 hover:text-gray-300'
+        }`}
+      >
+        <span>{item.icon}</span>
+        <span className="text-[11px] font-medium leading-none">{item.label}</span>
+      </button>
+    )
+  }
+
   return (
     <>
       {/* Bottom nav bar */}
       <nav className="fixed bottom-0 left-0 right-0 z-50 lg:hidden bg-gray-950/95 backdrop-blur-md border-t border-gray-800/60">
         <div className="flex items-stretch" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
-          {bottomNavPrimary.map(item => {
-            const isActive = activeTab === item.id && !moreOpen
-            return (
-              <button
-                key={item.id}
-                data-tour-id={item.id}
-                onClick={() => { setMoreOpen(false); onTabChange(item.id) }}
-                className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 px-1 transition-colors ${
-                  isActive ? 'text-brand-400' : 'text-gray-600 hover:text-gray-300'
-                }`}
-              >
-                {isActive && <span className="absolute mt-[-16px] w-1 h-1 rounded-full bg-brand-400" />}
-                <span>{item.icon}</span>
-                <span className="text-[10px] font-medium leading-none">{item.label}</span>
-              </button>
-            )
-          })}
+          {bottomNavLeft.map(tabButton)}
+
+          {/* Center quick-add — the one place to add anything */}
+          <div className="flex-1 flex items-center justify-center">
+            <button
+              type="button"
+              onClick={() => { setMoreOpen(false); onQuickAdd() }}
+              aria-label="Quick add"
+              className={`w-12 h-12 -mt-4 rounded-full flex items-center justify-center text-white shadow-lg transition-all active:scale-95 ${
+                quickAddOpen ? 'bg-gray-700 rotate-45' : 'bg-brand-600 shadow-brand-600/40'
+              }`}
+            >
+              <Plus size={24} />
+            </button>
+          </div>
+
+          {bottomNavRight.map(tabButton)}
 
           {/* More button */}
           <button
             onClick={() => setMoreOpen(o => !o)}
-            className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 px-1 transition-colors ${
-              moreOpen || isMoreActive ? 'text-brand-400' : 'text-gray-600 hover:text-gray-300'
+            className={`flex-1 flex flex-col items-center justify-center gap-1 py-2 px-1 min-h-[52px] transition-colors ${
+              moreOpen || isMoreActive ? 'text-brand-400' : 'text-gray-500 hover:text-gray-300'
             }`}
           >
             <span>{moreOpen ? <X size={20} /> : <Menu size={20} />}</span>
-            <span className="text-[10px] font-medium leading-none">More</span>
+            <span className="text-[11px] font-medium leading-none">More</span>
           </button>
         </div>
       </nav>
