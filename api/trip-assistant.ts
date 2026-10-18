@@ -11,8 +11,8 @@
  */
 import Anthropic from '@anthropic-ai/sdk'
 import { GoogleGenAI, ApiError } from '@google/genai'
-import { runTripAssistant, runGeminiAssistant, TripAssistantError } from '../src/server/tripAssistant'
-import { MAX_REQUEST_CHARS, type TripAssistantRequest } from '../src/utils/tripAssistantTypes'
+import { runTripAssistant, runGeminiAssistant, TripAssistantError } from '../src/server/tripAssistant.js'
+import { MAX_REQUEST_CHARS, type TripAssistantRequest } from '../src/utils/tripAssistantTypes.js'
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })

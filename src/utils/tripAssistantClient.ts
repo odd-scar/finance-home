@@ -23,7 +23,10 @@ export async function askTripAssistant(body: TripAssistantRequest, signal?: Abor
     return {
       ok: false,
       setup: json?.error === 'ai_not_configured',
-      message: json?.message ?? (res.status === 404 ? 'The assistant is available on the deployed app.' : 'Something went wrong. Please try again.'),
+      // The status code makes a server crash (500) or timeout (504) easy to tell apart
+      message: json?.message ?? (res.status === 404
+        ? 'The assistant is available on the deployed app.'
+        : `Something went wrong (error ${res.status}). Please try again.`),
     }
   } catch (err) {
     if ((err as Error)?.name === 'AbortError') return { ok: false, setup: false, message: 'Cancelled.' }
