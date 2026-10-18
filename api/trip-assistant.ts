@@ -3,12 +3,15 @@
  *
  * POST /api/trip-assistant   body: { request, trip }   header: Authorization: Bearer <supabase access token>
  *
- * Calls Claude through Vercel AI Gateway (AI_GATEWAY_API_KEY) with web search and
- * returns structured trip suggestions. Signed-in users only, so nobody else can
- * spend the AI budget. Runs on the Node.js runtime; maxDuration is set in vercel.json.
+ * Provider, in order:
+ *   1. GEMINI_API_KEY      → Google Gemini with Google Search (free tier at aistudio.google.com)
+ *   2. AI_GATEWAY_API_KEY  → Claude via Vercel AI Gateway with web search
+ * Signed-in users only, so nobody else can spend the AI budget. Node.js runtime;
+ * maxDuration is set in vercel.json.
  */
 import Anthropic from '@anthropic-ai/sdk'
-import { runTripAssistant, TripAssistantError } from '../src/server/tripAssistant'
+import { GoogleGenAI, ApiError } from '@google/genai'
+import { runTripAssistant, runGeminiAssistant, TripAssistantError } from '../src/server/tripAssistant'
 import { MAX_REQUEST_CHARS, type TripAssistantRequest } from '../src/utils/tripAssistantTypes'
 
 const json = (body: unknown, status = 200) =>
@@ -49,10 +52,15 @@ function parseBody(body: unknown): TripAssistantRequest | null {
   }
 }
 
+const NOT_CONFIGURED = {
+  error: 'ai_not_configured',
+  message: 'Add GEMINI_API_KEY (free) or AI_GATEWAY_API_KEY in Vercel to turn on the trip assistant.',
+}
+
 export async function POST(request: Request): Promise<Response> {
-  if (!process.env.AI_GATEWAY_API_KEY) {
-    return json({ error: 'ai_not_configured', message: 'Add AI_GATEWAY_API_KEY in Vercel to turn on the trip assistant.' }, 503)
-  }
+  const geminiKey = process.env.GEMINI_API_KEY
+  const gatewayKey = process.env.AI_GATEWAY_API_KEY
+  if (!geminiKey && !gatewayKey) return json(NOT_CONFIGURED, 503)
   if (!(await isSignedIn(request))) {
     return json({ error: 'unauthorized', message: 'Please sign in again.' }, 401)
   }
@@ -60,21 +68,33 @@ export async function POST(request: Request): Promise<Response> {
   const input = parseBody(await request.json().catch(() => null))
   if (!input) return json({ error: 'bad_request', message: 'Describe what you’re looking for.' }, 400)
 
-  // Anthropic SDK pointed at Vercel AI Gateway's Anthropic-compatible endpoint
-  const client = new Anthropic({
-    apiKey: process.env.AI_GATEWAY_API_KEY,
-    baseURL: 'https://ai-gateway.vercel.sh',
-    timeout: 110_000,
-    maxRetries: 1,
-  })
-
   try {
-    const result = await runTripAssistant(client, input)
-    return json(result)
+    if (geminiKey) {
+      const ai = new GoogleGenAI({ apiKey: geminiKey, httpOptions: { timeout: 100_000 } })
+      return json(await runGeminiAssistant(ai, input))
+    }
+    // Anthropic SDK pointed at Vercel AI Gateway's Anthropic-compatible endpoint
+    const client = new Anthropic({ apiKey: gatewayKey, baseURL: 'https://ai-gateway.vercel.sh', timeout: 110_000, maxRetries: 1 })
+    return json(await runTripAssistant(client, input))
   } catch (err) {
     if (err instanceof TripAssistantError) {
       return json({ error: err.code, message: err.message }, 422)
     }
+    // Google errors
+    if (err instanceof ApiError) {
+      console.error('trip-assistant gemini error', err.status, err.message)
+      if (err.status === 429) {
+        return json({ error: 'busy', message: 'The free Gemini limit was reached for now — try again in a minute (or tomorrow).' }, 429)
+      }
+      if ((err.status === 400 && /api key/i.test(err.message)) || err.status === 401 || err.status === 403) {
+        return json({ error: 'ai_not_configured', message: 'Google rejected the GEMINI_API_KEY. Check that it was copied correctly in Vercel.' }, 503)
+      }
+      if (err.status === 404) {
+        return json({ error: 'upstream', message: 'The Gemini model name isn’t available for this key. Set GEMINI_MODEL in Vercel to a current model.' }, 502)
+      }
+      return json({ error: 'upstream', message: 'The assistant hit a problem. Please try again.' }, 502)
+    }
+    // Anthropic errors
     if (err instanceof Anthropic.RateLimitError) {
       return json({ error: 'busy', message: 'The assistant is busy right now — try again in a minute.' }, 429)
     }

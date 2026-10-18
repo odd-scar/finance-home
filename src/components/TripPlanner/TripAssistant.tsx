@@ -149,7 +149,7 @@ export function TripAssistant({ open, onClose, trip, onAdd }: Props) {
             {error.message}
             {error.setup && (
               <p className="text-xs text-gray-400 mt-1">
-                In Vercel → AI Gateway, create an API key, then add it as <code className="text-gray-300">AI_GATEWAY_API_KEY</code> in your project's environment variables and redeploy.
+                Free option: get a key at aistudio.google.com, add it in Vercel (Settings → Environment Variables) as <code className="text-gray-300">GEMINI_API_KEY</code>, then redeploy.
               </p>
             )}
           </div>

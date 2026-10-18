@@ -6,6 +6,7 @@
  * user's trip until they tap "Add to trip" in the app.
  */
 import Anthropic from '@anthropic-ai/sdk'
+import type { GoogleGenAI, GenerateContentResponse } from '@google/genai'
 import {
   TRIP_ITEM_CATEGORIES, type TripAssistantRequest, type TripAssistantResult, type TripSuggestion, type TripItemCategory,
 } from '../utils/tripAssistantTypes'
@@ -65,15 +66,21 @@ const SUGGEST_TOOL = {
   },
 }
 
-export function buildUserPrompt({ request, trip }: TripAssistantRequest, today: Date): string {
+/**
+ * `includeAmounts: false` leaves the user's dollar figures (budget, planned costs) out of
+ * the prompt — used for Gemini's free tier, where Google may use requests to improve its products.
+ */
+export function buildUserPrompt({ request, trip }: TripAssistantRequest, today: Date, includeAmounts = true): string {
   const existing = trip.existing.length
-    ? trip.existing.map(e => `- ${e.category}: ${e.description || '(no description)'} — $${e.budgeted}`).join('\n')
+    ? trip.existing
+        .map(e => `- ${e.category}: ${e.description || '(no description)'}${includeAmounts ? ` — $${e.budgeted}` : ''}`)
+        .join('\n')
     : '- (nothing yet)'
   return [
     `Today is ${today.toISOString().slice(0, 10)}.`,
     `Trip: ${trip.name || 'Untitled'} — ${trip.destination || 'destination not set'}`,
     `Dates: ${trip.startDate || '?'} to ${trip.endDate || '?'}`,
-    `Total budget: $${trip.totalBudget || 0}`,
+    ...(includeAmounts ? [`Total budget: $${trip.totalBudget || 0}`] : []),
     `Already planned:\n${existing}`,
     '',
     `Request: ${request}`,
@@ -198,4 +205,122 @@ export async function runTripAssistant(
     break
   }
   throw new TripAssistantError('no_result', 'The assistant couldn’t put together suggestions. Try a more specific request.')
+}
+
+// ── Gemini (free tier) ─────────────────────────────────────────────────────
+// Gemini can't reliably combine Google Search with structured output in one call, so this
+// runs in two steps: (1) a grounded search that writes up findings, then (2) a plain
+// JSON-schema call that turns the write-up into suggestions. Step 2 picks each source by
+// number from the links step 1 actually found, so it can never invent a URL.
+
+export const GEMINI_MODEL = 'gemini-2.5-flash'
+
+export interface GeminiSource { title: string; uri: string }
+
+const GEMINI_SEARCH_SYSTEM = `You research trip prices for a personal budgeting app. Use Google Search to find current, typical prices for what the user asks about. Write concise notes: for each option give the name, key facts, and the price (say per person / per night / total and the currency). Prefer recent, well-known booking or travel sources. Say plainly where prices vary a lot. Do not ask questions; make sensible assumptions (state them).`
+
+const GEMINI_STRUCTURE_PROMPT = (sources: GeminiSource[]) => `Turn the research notes below into 3–8 concrete trip options for a budget.
+
+Rules:
+- estimated_cost is the total in USD for the whole party for the whole trip (hotel = nightly rate × nights; flights = per-person fare × travelers). Convert currencies roughly if needed and say so in caveats. Explain the math in cost_basis.
+- category must be one of: ${TRIP_ITEM_CATEGORIES.join(', ')}.
+- source_index: the number of the best matching source from the list below, or -1 if none fits. Never invent sources.
+- Put assumptions and things to double-check in caveats.
+
+Sources:
+${sources.length ? sources.map((s, i) => `${i}. ${s.title || s.uri}`).join('\n') : '(none found)'}`
+
+/** JSON schema for Gemini's structured output (source chosen by index, not by URL) */
+const GEMINI_SCHEMA = {
+  type: 'object',
+  required: ['summary', 'items', 'caveats'],
+  properties: {
+    summary: { type: 'string' },
+    items: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['category', 'title', 'details', 'estimated_cost', 'cost_basis', 'source_index', 'confidence'],
+        properties: {
+          category: { type: 'string', enum: [...TRIP_ITEM_CATEGORIES] },
+          title: { type: 'string' },
+          details: { type: 'string' },
+          estimated_cost: { type: 'number' },
+          cost_basis: { type: 'string' },
+          source_index: { type: 'integer' },
+          confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
+        },
+      },
+    },
+    caveats: { type: 'array', items: { type: 'string' } },
+  },
+}
+
+/** Pull the real links Google Search found out of a grounded response */
+export function collectGeminiSources(response: GenerateContentResponse): GeminiSource[] {
+  const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks ?? []
+  const seen = new Set<string>()
+  const out: GeminiSource[] = []
+  for (const c of chunks) {
+    const uri = c.web?.uri
+    if (uri && /^https?:\/\//i.test(uri) && !seen.has(uri)) {
+      seen.add(uri)
+      out.push({ title: c.web?.title ?? '', uri })
+    }
+  }
+  return out.slice(0, 20)
+}
+
+/** Replace source_index with the real URL (and site name), so sanitizeResult can verify it */
+export function resolveGeminiSources(raw: unknown, sources: GeminiSource[]): unknown {
+  const obj = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+  const items = (Array.isArray(obj.items) ? obj.items : []).map(it => {
+    const r = (it && typeof it === 'object' ? it : {}) as Record<string, unknown>
+    const s = typeof r.source_index === 'number' ? sources[r.source_index] : undefined
+    return { ...r, source_url: s?.uri ?? '', source_name: s?.title ?? '' }
+  })
+  return { ...obj, items }
+}
+
+export async function runGeminiAssistant(
+  ai: GoogleGenAI,
+  req: TripAssistantRequest,
+  today: Date = new Date()
+): Promise<TripAssistantResult> {
+  const model = process.env.GEMINI_MODEL || GEMINI_MODEL
+  const prompt = buildUserPrompt(req, today, false)
+
+  // Step 1 — grounded search
+  const research = await ai.models.generateContent({
+    model,
+    contents: prompt,
+    config: { systemInstruction: GEMINI_SEARCH_SYSTEM, tools: [{ googleSearch: {} }], maxOutputTokens: 4000 },
+  })
+  if (research.promptFeedback?.blockReason) {
+    throw new TripAssistantError('refused', 'The assistant declined this request. Try rephrasing it.')
+  }
+  const notes = research.text?.trim()
+  if (!notes) throw new TripAssistantError('no_result', 'The assistant couldn’t find anything. Try a more specific request.')
+  const sources = collectGeminiSources(research)
+
+  // Step 2 — structure it
+  const structured = await ai.models.generateContent({
+    model,
+    contents: `${prompt}\n\nResearch notes:\n${notes}`,
+    config: {
+      systemInstruction: GEMINI_STRUCTURE_PROMPT(sources),
+      responseMimeType: 'application/json',
+      responseJsonSchema: GEMINI_SCHEMA,
+      maxOutputTokens: 4000,
+    },
+  })
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(structured.text ?? '')
+  } catch {
+    throw new TripAssistantError('no_result', 'The assistant’s answer wasn’t readable. Please try again.')
+  }
+  const result = sanitizeResult(resolveGeminiSources(parsed, sources), new Set(sources.map(s => s.uri)))
+  if (result.items.length === 0) throw new TripAssistantError('no_result', 'No options came back. Try being more specific.')
+  return result
 }

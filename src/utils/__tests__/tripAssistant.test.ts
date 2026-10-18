@@ -120,3 +120,56 @@ describe('runTripAssistant', () => {
     await expect(runTripAssistant(fakeClient(msg('refusal', [])).client, req)).rejects.toBeInstanceOf(TripAssistantError)
   })
 })
+
+// ── Gemini path ─────────────────────────────────────────────────────────────
+import { runGeminiAssistant } from '../../server/tripAssistant'
+import type { GoogleGenAI } from '@google/genai'
+
+function fakeGemini(research: { text: string; chunks?: { uri: string; title: string }[]; blocked?: boolean }, structuredText: string) {
+  const generateContent = vi.fn()
+    .mockResolvedValueOnce({
+      text: research.text,
+      promptFeedback: research.blocked ? { blockReason: 'SAFETY' } : undefined,
+      candidates: [{ groundingMetadata: { groundingChunks: (research.chunks ?? []).map(c => ({ web: c })) } }],
+    })
+    .mockResolvedValueOnce({ text: structuredText })
+  return { ai: { models: { generateContent } } as unknown as GoogleGenAI, generateContent }
+}
+
+const geminiItems = (sourceIndex: number) => JSON.stringify({
+  summary: 'Fares found.',
+  items: [{ category: 'flights', title: 'United IAH–NRT', details: 'Nonstop', estimated_cost: 2400, cost_basis: '$1,200 × 2', source_index: sourceIndex, confidence: 'high' }],
+  caveats: ['Prices vary.'],
+})
+
+describe('runGeminiAssistant', () => {
+  const chunk = { uri: 'https://vertexaisearch.cloud.google.com/grounding-api-redirect/abc', title: 'google.com' }
+
+  it('searches first, then structures — links come only from the search', async () => {
+    const { ai, generateContent } = fakeGemini({ text: 'United ~$1,200 pp', chunks: [chunk] }, geminiItems(0))
+    const r = await runGeminiAssistant(ai, req)
+    expect(generateContent).toHaveBeenCalledTimes(2)
+    expect(generateContent.mock.calls[0][0].config.tools).toEqual([{ googleSearch: {} }])
+    expect(generateContent.mock.calls[1][0].config.responseMimeType).toBe('application/json')
+    expect(r.items[0]).toMatchObject({ title: 'United IAH–NRT', estimatedCost: 2400, sourceUrl: chunk.uri, sourceName: 'google.com' })
+  })
+
+  it('a made-up source number gives no link', async () => {
+    const { ai } = fakeGemini({ text: 'notes', chunks: [chunk] }, geminiItems(7))
+    expect((await runGeminiAssistant(ai, req)).items[0].sourceUrl).toBe('')
+  })
+
+  it('leaves the user’s dollar amounts out of what Google sees', async () => {
+    const { ai, generateContent } = fakeGemini({ text: 'notes', chunks: [] }, geminiItems(-1))
+    await runGeminiAssistant(ai, req)
+    const sent = generateContent.mock.calls[0][0].contents as string
+    expect(sent).toContain('Shinjuku hotel')
+    expect(sent).not.toContain('$1800')
+    expect(sent).not.toContain('Total budget')
+  })
+
+  it('reports blocked or unreadable answers clearly', async () => {
+    await expect(runGeminiAssistant(fakeGemini({ text: 'x', blocked: true }, '{}').ai, req)).rejects.toMatchObject({ code: 'refused' })
+    await expect(runGeminiAssistant(fakeGemini({ text: 'x' }, 'not json').ai, req)).rejects.toMatchObject({ code: 'no_result' })
+  })
+})
