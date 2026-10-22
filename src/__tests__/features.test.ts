@@ -1,5 +1,6 @@
 /**
- * Stock reordering, cache clearing, and keeping unsynced offline changes.
+ * Budget fixed-vs-flexible, savings links, stock reordering, cache clearing,
+ * and keeping unsynced offline changes.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 
@@ -19,11 +20,97 @@ vi.mock('../services/supabase', () => ({
   },
 }))
 
+import { monthPlan, zeroBased, SAVINGS_CATEGORY } from '../lib/budgetMath'
 import { runStartupCacheHygiene, PENDING_SYNC_KEY, STALE_AFTER_MS } from '../services/cacheHygiene'
 import {
-  state, resetToDemo, addStock, moveStock, removeStock, restoreStock, loadFromSupabase, signOutCleanup,
+  state, resetToDemo, addBudgetEntry, removeBudgetEntry, updateBudgetEntry, addSavings, addGoal,
+  addStock, moveStock, removeStock, restoreStock, rolloverRecurringEntries, loadFromSupabase, signOutCleanup,
 } from '../store/store'
-import type { Stock } from '../types'
+import type { Bill, BudgetEntry, Stock } from '../types'
+
+const entry = (id: string, extra: Partial<BudgetEntry> = {}): BudgetEntry => ({
+  id, month: 3, year: 2026, category: 'Dining Out', description: 'Tacos', amount: 40,
+  type: 'expense', addedAt: '2026-03-01T00:00:00Z', ...extra,
+})
+const bill = (extra: Partial<Bill> = {}): Bill => ({
+  id: 'rent', name: 'Rent', amount: 1500, category: 'housing', dueDay: 1,
+  frequency: 'monthly', autoPay: true, addedAt: '2026-01-01T00:00:00Z', ...extra,
+})
+
+// ── Fixed vs flexible ───────────────────────────────────────────────────────
+
+describe('budget: bills are fixed, plans are for flexible spending', () => {
+  const budget = [
+    entry('pay', { type: 'income', category: 'Salary', description: 'Pay', amount: 4000, recurring: true }),
+    entry('dine'),
+    entry('gym', { category: 'Health', description: 'Gym', amount: 50, recurring: true }),
+    entry('save', { category: SAVINGS_CATEGORY, description: 'To HYSA', amount: 300, recurring: true }),
+  ]
+  const p = monthPlan(budget, [bill(), bill({ id: 'elec', name: 'Electric', amount: 90, category: 'utilities' })], { 'Dining Out': 150, Utilities: 120 }, 3, 2026)
+
+  it('keeps bills and recurring costs out of the category rows', () => {
+    expect(p.rows.find(r => r.category === 'Rent/Mortgage')).toBeUndefined()
+    expect(p.rows.find(r => r.category === 'Health')).toBeUndefined()
+    // A plan on a category that only has a bill shows $0 flexible spending, not the bill
+    expect(p.rows.find(r => r.category === 'Utilities')).toMatchObject({ spent: 0, planned: 120 })
+    expect(p.rows.find(r => r.category === 'Dining Out')).toMatchObject({ spent: 40, remaining: 110 })
+  })
+
+  it('totals fixed costs separately (bills + recurring, not savings)', () => {
+    expect(p.fixedTotal).toBe(1500 + 90 + 50)
+    expect(p.rows.find(r => r.category === SAVINGS_CATEGORY)?.spent).toBe(300)
+  })
+
+  it('zero-based counts fixed costs as already assigned', () => {
+    // fixed 1640 + Dining 150 (plan) + Utilities 120 (plan) + Savings 300 (actual)
+    expect(zeroBased(p).assigned).toBe(2210)
+    expect(zeroBased(p).leftToAssign).toBe(1790)
+  })
+})
+
+// ── Savings links ───────────────────────────────────────────────────────────
+
+describe('logging savings into an account and toward a goal', () => {
+  beforeEach(() => {
+    resetToDemo()
+    addSavings({ id: 'hysa', name: 'HYSA', balance: 1000, monthlyContribution: 0, interestRate: 4, category: 'general', history: [], addedAt: '' })
+    addGoal({ id: 'trip', name: 'Japan', targetAmount: 5000, currentAmount: 200, targetDate: '2027-01-01', priority: 'high', category: 'savings', color: '#fff', addedAt: '' })
+  })
+  const acct = () => state.savings.find(a => a.id === 'hysa')!
+  const goal = () => state.goals.find(g => g.id === 'trip')!
+  const saving = (extra: Partial<BudgetEntry> = {}) =>
+    entry('s1', { category: SAVINGS_CATEGORY, description: 'Savings', amount: 250, savingsAccountId: 'hysa', goalId: 'trip', ...extra })
+
+  it('adds to both, and undo/delete takes it back out', () => {
+    addBudgetEntry(saving())
+    expect(acct().balance).toBe(1250)
+    expect(goal().currentAmount).toBe(450)
+    removeBudgetEntry('s1')
+    expect(acct().balance).toBe(1000)
+    expect(goal().currentAmount).toBe(200)
+  })
+
+  it('editing the amount adjusts by the difference', () => {
+    addBudgetEntry(saving())
+    updateBudgetEntry('s1', { amount: 100 })
+    expect(acct().balance).toBe(1100)
+    expect(goal().currentAmount).toBe(300)
+  })
+
+  it('ordinary expenses never touch accounts or goals', () => {
+    addBudgetEntry(entry('d1', { savingsAccountId: 'hysa' })) // not a savings transfer
+    expect(acct().balance).toBe(1000)
+  })
+
+  it('a recurring savings entry carried into next month does not re-add money', () => {
+    addBudgetEntry(saving({ id: 'r1', month: 6, year: 2097, recurring: true }))
+    expect(acct().balance).toBe(1250)
+    rolloverRecurringEntries(7, 2097)
+    const copied = state.budget.find(b => b.month === 7 && b.year === 2097 && b.category === SAVINGS_CATEGORY)!
+    expect(copied.savingsAccountId).toBeUndefined()
+    expect(acct().balance).toBe(1250)
+  })
+})
 
 // ── Stock order ─────────────────────────────────────────────────────────────
 

@@ -5,23 +5,24 @@ import {
   addBudgetEntry, removeBudgetEntry, updateBudgetEntry,
   updateBudgetEntryThisMonth, updateBudgetEntryGoingForward,
   rolloverRecurringEntries, setCategoryLimit, removeCategoryLimit, moveBudgetPlan,
-  addCustomCategory, removeCustomCategory, setBudgetMode,
+  setBudgetMode,
 } from '../../store/store'
 import { Modal } from '../ui/Modal'
 import { Button, Input, FormField, Select } from '../ui/FormField'
 import {
   Plus, Trash2, Edit2, ChevronLeft, ChevronRight, ChevronDown, Zap, Search, X, Check,
-  Repeat, History, ArrowRight, CalendarDays, Pencil, Receipt,
+  Repeat, History, ArrowRight, CalendarDays, Receipt, List as ListIcon, BarChart3,
 } from 'lucide-react'
-import { v4 as uuid } from 'uuid'
 import { BudgetEntry } from '../../types'
 import { PaycheckOverridePanel } from '../PaycheckOverride/PaycheckOverridePanel'
-import { monthPlan, monthTotals, coverSource, zeroBased, SAVINGS_CATEGORY, type BillItem } from '../../lib/budgetMath'
-import { INCOME_CATS, VARIABLE_CATS, allExpenseCategories, catColor, todayISO } from '../../lib/categories'
+import { monthPlan, monthTotals, coverSource, zeroBased, isFixedCategory, SAVINGS_CATEGORY, type FixedItem } from '../../lib/budgetMath'
+import { INCOME_CATS, allExpenseCategories, catColor, todayISO } from '../../lib/categories'
+import { LogForm } from './LogForm'
+import { BudgetVsActualChart } from './BudgetVsActualChart'
 import { MoneyInput } from '../ui/MoneyInput'
 import { parseAmount } from '../../lib/mathExpr'
 
-const LAST_CAT_KEY = 'finance-home-last-spend-category'
+const CAT_VIEW_KEY = 'finance-home-budget-category-view'
 
 // No width here — each input sets its own (w-full, w-36, …) so they never conflict
 const inputCls =
@@ -47,13 +48,6 @@ const shiftMonth = (month: number, year: number, delta: number) => {
 }
 
 /** Default date for a new entry: today in the current month, otherwise the 1st of the viewed month */
-const defaultDateFor = (month: number, year: number) => {
-  const now = new Date()
-  return now.getMonth() + 1 === month && now.getFullYear() === year
-    ? todayISO()
-    : `${year}-${String(month).padStart(2, '0')}-01`
-}
-
 const emptyEdit = {
   category: 'Groceries', description: '', amount: '', date: '',
   type: 'expense' as 'income' | 'expense', recurring: false,
@@ -137,77 +131,9 @@ export function Budget() {
     setToast(null)
   }
 
-  // ── Log form (the one way to add money in or out) ────────────────────
-  const [logType, setLogType] = useState<'expense' | 'income'>('expense')
-  const [amount, setAmount] = useState('')
-  const [expenseCat, setExpenseCat] = useState(() => {
-    try { return localStorage.getItem(LAST_CAT_KEY) || 'Groceries' } catch { return 'Groceries' }
-  })
-  const [incomeCat, setIncomeCat] = useState('Salary')
-  const [note, setNote] = useState('')
-  const [date, setDate] = useState(() => defaultDateFor(viewMonth, viewYear))
-  const [recurring, setRecurring] = useState(false)
-  const [addingCat, setAddingCat] = useState(false)
-  const [newCat, setNewCat] = useState('')
-  const [manageCats, setManageCats] = useState(false)
-  const [formError, setFormError] = useState('')
-  const amountRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => { setDate(defaultDateFor(viewMonth, viewYear)) }, [viewMonth, viewYear])
-
-  const pickerCats = logType === 'income'
-    ? INCOME_CATS
-    : [...VARIABLE_CATS, ...customCategories.filter(c => !VARIABLE_CATS.some(v => v.toLowerCase() === c.toLowerCase()))]
-  const chosen = logType === 'income' ? incomeCat : expenseCat
-  const activeCat = pickerCats.includes(chosen) ? chosen : pickerCats[0]
-  const setChosen = (c: string) => (logType === 'income' ? setIncomeCat(c) : setExpenseCat(c))
-
-  const startIncome = () => {
-    setLogType('income')
-    setRecurring(true)
-    amountRef.current?.focus()
-  }
-
-  const handleLog = () => {
-    const amt = parseAmount(amount)
-    if (!(amt > 0)) { setFormError('Enter an amount.'); amountRef.current?.focus(); return }
-    const day = /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : defaultDateFor(viewMonth, viewYear)
-    const d = parseLocalDate(day)
-    const entry: BudgetEntry = {
-      id: uuid(),
-      month: d.getMonth() + 1,
-      year: d.getFullYear(),
-      category: activeCat,
-      description: note.trim() || activeCat,
-      amount: Math.round(amt * 100) / 100,
-      type: logType,
-      recurring,
-      date: day,
-      addedAt: new Date().toISOString(),
-    }
-    addBudgetEntry(entry)
-    if (logType === 'expense') {
-      try { localStorage.setItem(LAST_CAT_KEY, activeCat) } catch { /* quota */ }
-    }
-    showToast(entry, 'logged')
-    // Ready for the next one: keep type/category/date, clear amount + note
-    setAmount('')
-    setNote('')
-    setFormError('')
-    if (entry.month !== viewMonth || entry.year !== viewYear) goTo(entry.month, entry.year)
-    amountRef.current?.focus()
-  }
-
-  const handleAddCategory = () => {
-    const name = newCat.trim().replace(/\s+/g, ' ').slice(0, 40)
-    if (name) {
-      const existing = pickerCats.find(c => c.toLowerCase() === name.toLowerCase())
-      if (!existing) addCustomCategory(name)
-      setExpenseCat(existing ?? name)
-    }
-    setNewCat('')
-    setAddingCat(false)
-  }
+  // ── Log form lives in LogForm.tsx (shared with the "+" quick-add sheet) ──
+  const [typeRequest, setTypeRequest] = useState<{ type: 'expense' | 'income'; n: number } | undefined>()
+  const startIncome = () => setTypeRequest(r => ({ type: 'income', n: (r?.n ?? 0) + 1 }))
 
   // ── Category plan (plan vs actual, "cover it") ───────────────────────
   const [editingPlan, setEditingPlan] = useState<string | null>(null)
@@ -231,21 +157,34 @@ export function Budget() {
       <div className="flex items-center gap-1 shrink-0">
         <input
           autoFocus
-          type="number"
+          type="text"
           inputMode="decimal"
-          placeholder="Plan"
+          placeholder="Plan $"
+          aria-label={`Monthly plan for ${catLabel(category)}`}
           value={planInput}
           onChange={e => setPlanInput(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter') savePlan(category); if (e.key === 'Escape') setEditingPlan(null) }}
-          className={`${inputCls} w-20 px-2 py-1 text-xs`}
+          className={`${inputCls} w-24 px-2 py-1.5 text-xs`}
           style={{ fontSize: '16px' }}
         />
-        <button type="button" onClick={() => savePlan(category)} className="p-1 text-emerald-400"><Check size={14} /></button>
+        <button type="button" onClick={() => savePlan(category)} aria-label="Save plan" className="p-1 text-emerald-400"><Check size={16} /></button>
+        {planned > 0 && (
+          <button
+            type="button"
+            onClick={() => { removeCategoryLimit(category); setEditingPlan(null); setPlanInput('') }}
+            aria-label={`Remove the ${catLabel(category)} plan`}
+            title="Remove this plan (spending stays recorded)"
+            className="p-1 text-rose-400"
+          >
+            <Trash2 size={16} />
+          </button>
+        )}
       </div>
     ) : (
       <button
         type="button"
         onClick={() => startPlan(category, planned)}
+        aria-label={`${planned > 0 ? 'Edit' : 'Set'} the ${catLabel(category)} plan`}
         className="shrink-0 px-2 py-1 text-xs text-gray-500 hover:text-white border border-gray-700 rounded-lg"
       >
         {planned > 0 ? 'Edit' : 'Plan'}
@@ -253,6 +192,13 @@ export function Budget() {
     )
 
   const [showUnplanned, setShowUnplanned] = useState(false)
+  const [catView, setCatViewState] = useState<'list' | 'chart'>(() => {
+    try { return localStorage.getItem(CAT_VIEW_KEY) === 'chart' ? 'chart' : 'list' } catch { return 'list' }
+  })
+  const setCatView = (v: 'list' | 'chart') => {
+    setCatViewState(v)
+    try { localStorage.setItem(CAT_VIEW_KEY, v) } catch { /* storage unavailable */ }
+  }
   const planRows = editingPlan && !plan.rows.some(r => r.category === editingPlan)
     ? [...plan.rows, { category: editingPlan, spent: 0, planned: 0, remaining: 0 }]
     : plan.rows
@@ -262,23 +208,35 @@ export function Budget() {
   const unplannedRows = planRows.filter(r => !(r.planned > 0) && r.category !== editingPlan)
   const unplannedTotal = unplannedRows.reduce((s, r) => s + r.spent, 0)
   const unplannedOpen = showUnplanned || plannedRows.length === 0
-  const unplannedCats = [...EXPENSE_CATS].filter(c => !planRows.some(r => r.category === c))
+  const unplannedCats = [...EXPENSE_CATS].filter(c => !isFixedCategory(c) && !planRows.some(r => r.category === c))
+
+  // Where the month's income goes: fixed → spent → savings → left
+  const savedSoFar = plan.byCategory[SAVINGS_CATEGORY] ?? 0
+  const flexSpent = Math.max(0, plan.expenses - plan.fixedTotal - savedSoFar)
+  const flow = [
+    { key: 'fixed', label: 'Bills', amount: plan.fixedTotal, color: 'bg-sky-500', dot: 'bg-sky-500' },
+    { key: 'spent', label: 'Spent', amount: flexSpent, color: 'bg-violet-500', dot: 'bg-violet-500' },
+    { key: 'saved', label: 'Savings', amount: savedSoFar + plan.savingsReserve, color: 'bg-emerald-500', dot: 'bg-emerald-500' },
+    { key: 'left', label: plan.leftToSpend < 0 ? 'Over' : 'Left', amount: Math.abs(plan.leftToSpend), color: plan.leftToSpend < 0 ? 'bg-rose-500' : 'bg-gray-600', dot: plan.leftToSpend < 0 ? 'bg-rose-500' : 'bg-gray-500' },
+  ]
+  const flowBase = Math.max(plan.income, flow.slice(0, 3).reduce((s, f) => s + f.amount, 0)) || 1
+  const [fixedOpen, setFixedOpen] = useState(false)
 
   // ── Transactions ─────────────────────────────────────────────────────
   const [search, setSearch] = useState('')
-  const [openGroups, setOpenGroups] = useState<{ income: boolean; fixed: boolean }>({ income: false, fixed: false })
+  const [incomeOpen, setIncomeOpen] = useState(false)
   const q = search.trim().toLowerCase()
   const matches = (desc: string, cat: string) =>
     (!q || desc.toLowerCase().includes(q) || cat.toLowerCase().includes(q)) && (!filterCat || cat === filterCat)
 
+  // Fixed items live in their own section; the transaction list only shows them while searching
+  const fixedIds = new Set(plan.fixedItems.map(i => i.id))
   const monthEntries = budget.filter(b => b.month === viewMonth && b.year === viewYear && matches(b.description, b.category))
   const incomeEntries = filterCat ? [] : monthEntries.filter(b => b.type === 'income')
-  const fixedEntries = monthEntries.filter(b => b.type === 'expense' && b.recurring)
-  const fixedBills: BillItem[] = plan.billItems.filter(i => matches(i.bill.name, i.category))
-  const variableEntries = monthEntries.filter(b => b.type === 'expense' && !b.recurring)
+  const searchedFixed = q ? plan.fixedItems.filter(i => matches(i.name, i.category)) : []
+  const variableEntries = monthEntries.filter(b => b.type === 'expense' && !fixedIds.has(b.id))
 
   const incomeTotal = incomeEntries.reduce((s, b) => s + b.amount, 0)
-  const fixedTotal = fixedEntries.reduce((s, b) => s + b.amount, 0) + fixedBills.reduce((s, i) => s + i.amount, 0)
 
   // Variable purchases by day, newest first; entries without a date go last
   const dayGroups: { day: string; items: BudgetEntry[]; total: number }[] = []
@@ -448,6 +406,24 @@ export function Budget() {
     </button>
   )
 
+  /** A must-pay: budget entries can be edited here; bills are managed on the Bills tab */
+  const fixedRow = (item: FixedItem) => item.entry ? entryRow(item.entry) : (
+    <div key={item.id} className="flex items-center gap-3 px-4 py-3 sm:px-5">
+      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: catColor(item.category) }} />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm text-white truncate">{item.name}</p>
+        <p className="text-xs text-gray-500 truncate">
+          {item.category} · from Bills
+          {item.bill && item.bill.frequency !== 'monthly' && ` · ${formatCurrency(item.bill.amount)} ${item.bill.frequency}, set aside monthly`}
+        </p>
+      </div>
+      <span className="text-sm font-semibold text-rose-400 shrink-0">-{formatCurrency(item.amount)}</span>
+    </div>
+  )
+  // A logged entry in the same category as a bill is often the same payment counted twice
+  const billCats = new Set(plan.fixedItems.filter(i => i.bill).map(i => i.category))
+  const possibleDupes = plan.fixedItems.filter(i => i.entry && billCats.has(i.category))
+
   return (
     <div className="p-4 lg:p-6 space-y-4 lg:space-y-5 animate-fade-in pb-32 lg:pb-6 max-w-3xl mx-auto">
 
@@ -572,177 +548,79 @@ export function Budget() {
                 {formatCurrency(plan.perDay)}/day for {plan.daysLeft} {plan.daysLeft === 1 ? 'day' : 'days'}
               </p>
             )}
-            <p className="text-xs text-gray-500 mt-2">
-              {formatCurrency(plan.income)} income − {formatCurrency(plan.fixedExpenses)} fixed − {formatCurrency(plan.variableExpenses)} spent
-              {plan.savingsReserve > 0 && ` − ${formatCurrency(plan.savingsReserve)} savings to set aside`}
-            </p>
-
-            {/* 50/30/20 reference — one bar, as a guide not a rule */}
-            {splitBase > 0 && (
-              <div className="mt-4">
-                <div className="h-2 bg-gray-800 rounded-full overflow-hidden flex">
-                  <div className="h-full bg-indigo-500" style={{ width: `${(plan.split.needs / splitBase) * 100}%` }} />
-                  <div className="h-full bg-amber-500" style={{ width: `${(plan.split.wants / splitBase) * 100}%` }} />
-                  <div className="h-full bg-emerald-500" style={{ width: `${(plan.split.savings / splitBase) * 100}%` }} />
-                </div>
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-xs text-gray-400">
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-indigo-500" />Needs {pctOf(plan.split.needs)}%</span>
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500" />Wants {pctOf(plan.split.wants)}%</span>
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500" />Savings {pctOf(plan.split.savings)}%</span>
-                  <span className="text-gray-600 ml-auto" title="A common guide: 50% needs, 30% wants, 20% savings">guide 50 / 30 / 20</span>
-                </div>
+            {/* Where this month's income goes — one bar, four plain labels */}
+            <div className="mt-4">
+              <div className="flex items-baseline justify-between text-xs text-gray-400 mb-1.5">
+                <span>Income this month</span>
+                <span className="font-semibold text-gray-200">{formatCurrency(plan.income)}</span>
               </div>
-            )}
+              <div className="h-3 bg-gray-800 rounded-full overflow-hidden flex gap-px" aria-hidden="true">
+                {flow.filter(f => f.key !== 'left' || plan.leftToSpend > 0).map(f => (
+                  <div key={f.key} className={`h-full ${f.color}`} style={{ width: `${(f.amount / flowBase) * 100}%` }} />
+                ))}
+              </div>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 mt-3">
+                {flow.map(f => (
+                  <div key={f.key} className="flex items-center gap-2 text-xs min-w-0">
+                    <span className={`w-2.5 h-2.5 rounded-sm shrink-0 ${f.dot}`} />
+                    <span className="text-gray-400 truncate flex-1">{f.label}</span>
+                    <span className={`font-medium shrink-0 ${f.key === 'left' && plan.leftToSpend < 0 ? 'text-rose-400' : 'text-gray-200'}`}>{formatCurrency(f.amount)}</span>
+                  </div>
+                ))}
+              </div>
+              {splitBase > 0 && (
+                <p className="text-[11px] text-gray-500 mt-3" title="A common guide: 50% needs, 30% wants, 20% savings">
+                  Needs {pctOf(plan.split.needs)}% · Wants {pctOf(plan.split.wants)}% · Savings {pctOf(plan.split.savings)}%
+                  <span className="text-gray-600"> (guide: 50 / 30 / 20)</span>
+                </p>
+              )}
+            </div>
           </>
         )}
       </div>
 
-      {/* ── Log form ──────────────────────────────────────────────────── */}
-      <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 sm:p-5 space-y-3">
-        <div className="flex items-center gap-2">
-          <div className="flex rounded-lg overflow-hidden border border-gray-700 text-xs">
-            {(['expense', 'income'] as const).map(t => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => { setLogType(t); setRecurring(t === 'income') }}
-                className={`px-3 py-1.5 font-medium transition-colors ${logType === t
-                  ? t === 'income' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
-                  : 'text-gray-400 hover:text-white'}`}
-              >
-                {t === 'expense' ? 'Expense' : 'Income'}
-              </button>
-            ))}
+      {/* ── Log form (shared with the + quick-add sheet) ─────────────── */}
+      <LogForm
+        month={viewMonth}
+        year={viewYear}
+        typeRequest={typeRequest}
+        onLogged={e => { if (e.month !== viewMonth || e.year !== viewYear) goTo(e.month, e.year) }}
+      />
+
+      {/* ── Spending plan: flexible categories, plan vs actual ─────────── */}
+      <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+        <div className="flex items-center gap-2 px-5 py-3 border-b border-gray-800">
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-white">Spending plan</h3>
+            <p className="text-xs text-gray-500">Flexible spending you can control</p>
           </div>
-          {logType === 'expense' && customCategories.length > 0 && (
-            <button type="button" onClick={() => setManageCats(v => !v)} className="ml-auto flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300">
-              {manageCats ? <><Check size={12} /> Done</> : <><Pencil size={11} /> Edit categories</>}
-            </button>
+          {plannedRows.length > 0 && (
+            <div className="flex rounded-lg overflow-hidden border border-gray-700 text-xs" role="group" aria-label="Category view">
+              {(['list', 'chart'] as const).map(v => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setCatView(v)}
+                  className={`flex items-center gap-1 px-2.5 py-1.5 transition-colors ${catView === v ? 'bg-brand-600 text-white' : 'text-gray-400 hover:text-white'}`}
+                >
+                  {v === 'list' ? <ListIcon size={12} /> : <BarChart3 size={12} />} {v === 'list' ? 'List' : 'Chart'}
+                </button>
+              ))}
+            </div>
           )}
         </div>
 
-        <div className="text-2xl font-bold">
-          <MoneyInput
-            inputRef={amountRef}
-            aria-label="Amount"
-            value={amount}
-            onChange={v => { setAmount(v); setFormError('') }}
-            onEnter={handleLog}
-            className="!rounded-xl !py-3 text-2xl font-bold"
-          />
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          {pickerCats.map(c => {
-            const selected = c === activeCat
-            return (
-              <div key={c} className="relative">
-                <button
-                  type="button"
-                  onClick={() => setChosen(c)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm border transition-all active:scale-95 ${
-                    selected ? 'text-white' : 'bg-gray-800 border-gray-700 text-gray-300 hover:text-white'
-                  }`}
-                  style={selected ? { backgroundColor: catColor(c) + '40', borderColor: catColor(c) } : undefined}
-                >
-                  <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: catColor(c) }} />
-                  {c}
-                </button>
-                {manageCats && logType === 'expense' && customCategories.includes(c) && (
-                  <button
-                    type="button"
-                    onClick={() => removeCustomCategory(c)}
-                    title={`Remove ${c} (past entries are kept)`}
-                    className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-rose-600 text-white flex items-center justify-center"
-                  >
-                    <X size={11} />
-                  </button>
-                )}
-              </div>
-            )
-          })}
-          {logType === 'expense' && (addingCat ? (
-            <div className="flex items-center gap-1">
-              <input
-                autoFocus
-                type="text"
-                maxLength={40}
-                placeholder="e.g. Starbucks"
-                value={newCat}
-                onChange={e => setNewCat(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') handleAddCategory()
-                  if (e.key === 'Escape') { setAddingCat(false); setNewCat('') }
-                }}
-                className={`${inputCls} w-36 px-3 py-1.5 text-sm`}
-                style={{ fontSize: '16px' }}
-              />
-              <button type="button" onClick={handleAddCategory} className="p-1.5 text-emerald-400"><Check size={16} /></button>
-              <button type="button" onClick={() => { setAddingCat(false); setNewCat('') }} className="p-1.5 text-gray-500"><X size={16} /></button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setAddingCat(true)}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-full text-sm border border-dashed border-gray-600 text-gray-400 hover:text-white hover:border-gray-400"
-            >
-              <Plus size={13} /> New
-            </button>
-          ))}
-        </div>
-
-        <div className="flex gap-2">
-          <input
-            type="text"
-            placeholder="Note (optional)"
-            aria-label="Note"
-            value={note}
-            onChange={e => setNote(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') handleLog() }}
-            className={`${inputCls} flex-1 min-w-0 px-3 py-2.5 text-sm`}
-            style={{ fontSize: '16px' }}
-          />
-          <input
-            type="date"
-            aria-label="Date"
-            value={date}
-            onChange={e => setDate(e.target.value)}
-            className={`${inputCls} w-[9.5rem] min-w-0 shrink-0 px-2 py-2.5 text-sm`}
-            style={{ fontSize: '16px', colorScheme: 'dark' }}
-          />
-        </div>
-
-        <div className="flex items-center gap-3">
-          <Toggle on={recurring} onClick={() => setRecurring(r => !r)} />
-          <p className="text-xs text-gray-400 flex-1">
-            <span className="text-gray-200 font-medium">Repeats monthly</span>
-            {logType === 'expense' && ' — counts as a fixed expense'}
-          </p>
-        </div>
-
-        {formError && <p className="text-xs text-rose-400">{formError}</p>}
-
-        <button
-          type="button"
-          onClick={handleLog}
-          className={`w-full py-3 text-white font-semibold rounded-xl transition-colors ${logType === 'income' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-brand-600 hover:bg-brand-500'}`}
-        >
-          {logType === 'income' ? 'Add' : 'Log'} {parseAmount(amount) > 0 ? formatCurrency(parseAmount(amount)) : logType === 'income' ? 'income' : 'expense'} · {activeCat}
-        </button>
-      </div>
-
-      {/* ── Categories: plan vs actual ────────────────────────────────── */}
-      <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
-        <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-800">
-          <h3 className="font-semibold text-white flex-1">Categories</h3>
-          <span className="text-xs text-gray-500">spent / planned</span>
-        </div>
         {plannedRows.length === 0 && unplannedRows.length === 0 && (
-          <p className="px-5 py-6 text-sm text-gray-500 text-center">No spending yet this month.</p>
+          <p className="px-5 py-6 text-sm text-gray-500 text-center">Nothing spent yet this month. Plan a category below, then log what you spend.</p>
+        )}
+
+        {/* Budgeted vs actual for each planned category */}
+        {catView === 'chart' && plannedRows.length > 0 && (
+          <BudgetVsActualChart rows={plannedRows.filter(r => r.planned > 0)} />
         )}
 
         {/* Planned categories: spent vs plan, "cover it" when over */}
-        <div className="divide-y divide-gray-800/60">
+        <div className={`divide-y divide-gray-800/60 ${catView === 'chart' ? 'hidden' : ''}`}>
           {plannedRows.map(row => {
             const { category, spent, planned, remaining } = row
             const isSavings = category === SAVINGS_CATEGORY
@@ -752,33 +630,29 @@ export function Budget() {
             const pct = planned > 0 ? spent / planned : 0
             const barColor = isSavings ? 'bg-emerald-500' : pct >= 1 ? 'bg-rose-500' : pct >= 0.8 ? 'bg-amber-500' : 'bg-emerald-500'
             return (
-              <div key={category} className={`px-4 py-3 sm:px-5 ${filterCat === category ? 'bg-gray-800/50' : ''}`}>
+              <div key={category} className={`px-4 py-3.5 sm:px-5 ${filterCat === category ? 'bg-gray-800/50' : ''}`}>
                 <div className="flex items-center gap-3">
                   <button type="button" onClick={() => setFilterCat(f => (f === category ? null : category))} className="flex-1 min-w-0 text-left" title="Show these transactions">
-                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <div className="flex items-center justify-between gap-2 mb-2">
                       <span className="text-sm font-medium text-white flex items-center gap-2 truncate">
                         <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: catColor(category) }} />
                         {catLabel(category)}
                       </span>
-                      <span className="text-sm shrink-0">
-                        <span className="font-semibold text-white">{formatCurrency(spent)}</span>
-                        {planned > 0 && <span className="text-gray-500"> / {formatCurrency(planned)}</span>}
+                      <span className={`text-sm font-semibold shrink-0 ${over ? 'text-rose-400' : isSavings && remaining <= 0 ? 'text-emerald-400' : pct >= 0.8 && !isSavings ? 'text-amber-400' : 'text-emerald-400'}`}>
+                        {planned <= 0
+                          ? <span className="text-gray-500 font-normal">New plan</span>
+                          : isSavings
+                          ? remaining <= 0 ? 'Goal met ✓' : `${formatCurrency(remaining)} to go`
+                          : over ? `${formatCurrency(-remaining)} over` : `${formatCurrency(remaining)} left`}
                       </span>
                     </div>
-                    {planned > 0 && (
-                      <>
-                        <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
-                          <div className={`h-1.5 rounded-full ${barColor}`} style={{ width: `${Math.min(100, pct * 100)}%` }} />
-                        </div>
-                        <p className={`text-xs mt-1 ${over ? 'text-rose-400' : isSavings && remaining <= 0 ? 'text-emerald-400' : 'text-gray-500'}`}>
-                          {isSavings
-                            ? remaining <= 0
-                              ? `Goal met${remaining < 0 ? ` · ${formatCurrency(-remaining)} extra saved` : ''}`
-                              : `${formatCurrency(remaining)} still to set aside`
-                            : over ? `Over by ${formatCurrency(-remaining)}` : `${formatCurrency(remaining)} left`}
-                        </p>
-                      </>
-                    )}
+                    <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
+                      <div className={`h-2 rounded-full ${barColor}`} style={{ width: `${Math.min(100, pct * 100)}%` }} />
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1.5">
+                      {formatCurrency(spent)} of {formatCurrency(planned)}{isSavings ? ' saved' : ' spent'}
+                      {isSavings && remaining < 0 && ` · ${formatCurrency(-remaining)} extra`}
+                    </p>
                   </button>
                   {planEditor(category, planned)}
                 </div>
@@ -837,10 +711,10 @@ export function Budget() {
               aria-label="Plan a category"
               value=""
               onChange={e => { if (e.target.value) startPlan(e.target.value, 0) }}
-              className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-brand-500"
+              className="w-full bg-transparent border border-dashed border-gray-700 hover:border-brand-500 rounded-xl px-3 py-2.5 text-sm text-brand-300 text-center focus:outline-none focus:border-brand-500 cursor-pointer"
               style={{ fontSize: '16px', colorScheme: 'dark' }}
             >
-              <option value="">+ Plan a category…</option>
+              <option value="">+ Plan another category</option>
               {unplannedCats.map(c => <option key={c} value={c}>{catLabel(c)}</option>)}
             </select>
             {plannedRows.length === 0 && (
@@ -853,6 +727,39 @@ export function Budget() {
           </div>
         )}
       </div>
+
+      {/* ── Bills & fixed: must-pays, no plan needed ──────────────────── */}
+      {plan.fixedItems.length > 0 && (
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setFixedOpen(v => !v)}
+            aria-expanded={fixedOpen}
+            className="w-full flex items-center gap-3 px-5 py-3.5 text-left hover:bg-gray-800/40"
+          >
+            <span className="p-2 rounded-xl bg-sky-500/15 text-sky-400 shrink-0"><Receipt size={15} /></span>
+            <span className="flex-1 min-w-0">
+              <span className="block font-semibold text-white">Bills & fixed <span className="text-gray-500 font-normal text-sm">({plan.fixedItems.length})</span></span>
+              <span className="block text-xs text-gray-500">Must-pays, counted automatically. No plan needed.</span>
+            </span>
+            <span className="text-sm font-semibold text-gray-200 shrink-0">{formatCurrency(plan.fixedTotal)}</span>
+            <ChevronDown size={15} className={`text-gray-500 shrink-0 transition-transform ${fixedOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {possibleDupes.length > 0 && (
+            <p className="mx-5 mb-3 text-xs px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/25 text-amber-300">
+              Counted twice? {possibleDupes.map(i => `“${i.name}”`).join(', ')} {possibleDupes.length === 1 ? 'is' : 'are'} logged here and the Bills tab has a bill in the same category. If it’s the same payment, delete the logged one.
+            </p>
+          )}
+          {fixedOpen && (
+            <div className="border-t border-gray-800 divide-y divide-gray-800/60">
+              {plan.fixedItems.map(fixedRow)}
+              <p className="px-5 py-2.5 text-[11px] text-gray-600">
+                Bills come from the Bills tab. Rent, insurance, debt payments, subscriptions, and anything set to repeat monthly land here too.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── Transactions ──────────────────────────────────────────────── */}
       <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
@@ -880,7 +787,7 @@ export function Budget() {
           )}
         </div>
 
-        {incomeEntries.length === 0 && fixedEntries.length === 0 && fixedBills.length === 0 && dayGroups.length === 0 ? (
+        {incomeEntries.length === 0 && searchedFixed.length === 0 && dayGroups.length === 0 ? (
           <p className="text-center text-gray-500 py-10 text-sm px-6">
             {q || filterCat ? 'Nothing matches.' : `Nothing logged for ${monthTitle} yet.`}
           </p>
@@ -888,36 +795,16 @@ export function Budget() {
           <div>
             {incomeEntries.length > 0 && (
               <div>
-                {groupHeader('Income', incomeEntries.length, incomeTotal, '+', forceOpen || openGroups.income,
-                  forceOpen ? undefined : () => setOpenGroups(g => ({ ...g, income: !g.income })))}
-                {(forceOpen || openGroups.income) && <div className="divide-y divide-gray-800/60">{incomeEntries.map(entryRow)}</div>}
+                {groupHeader('Income', incomeEntries.length, incomeTotal, '+', forceOpen || incomeOpen,
+                  forceOpen ? undefined : () => setIncomeOpen(v => !v))}
+                {(forceOpen || incomeOpen) && <div className="divide-y divide-gray-800/60">{incomeEntries.map(entryRow)}</div>}
               </div>
             )}
 
-            {(fixedEntries.length > 0 || fixedBills.length > 0) && (
+            {searchedFixed.length > 0 && (
               <div>
-                {groupHeader('Fixed — bills & monthly', fixedEntries.length + fixedBills.length, fixedTotal, '-', forceOpen || openGroups.fixed,
-                  forceOpen ? undefined : () => setOpenGroups(g => ({ ...g, fixed: !g.fixed })))}
-                {(forceOpen || openGroups.fixed) && (
-                  <div className="divide-y divide-gray-800/60">
-                    {fixedEntries.map(entryRow)}
-                    {fixedBills.map(({ bill, category, amount: amt }) => (
-                      <div key={bill.id} className="flex items-center gap-3 px-4 py-3 sm:px-5">
-                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: catColor(category) }} />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm text-white truncate flex items-center gap-1.5">
-                            {bill.name}
-                            <span className="text-[10px] text-sky-400 border border-sky-400/30 rounded px-1 shrink-0 flex items-center gap-0.5"><Receipt size={9} />bill</span>
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            {category}{bill.frequency !== 'monthly' && ` · ${formatCurrency(bill.amount)} ${bill.frequency}, set aside monthly`}
-                          </p>
-                        </div>
-                        <span className="text-sm font-semibold text-rose-400 shrink-0">-{formatCurrency(amt)}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                {groupHeader('Bills & fixed', searchedFixed.length, searchedFixed.reduce((s, i) => s + i.amount, 0), '-', true)}
+                <div className="divide-y divide-gray-800/60">{searchedFixed.map(fixedRow)}</div>
               </div>
             )}
 

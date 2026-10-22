@@ -4,7 +4,7 @@ import { formatCurrency, calcPctChange, formatPercent, daysUntilDueDay, nextDueD
 import { StatCard } from '../ui/Card'
 import { ProgressBar } from '../ui/ProgressBar'
 import { snapshotNetWorth, autoSnapshotIfNeeded, dismissAlerts, restoreAlerts } from '../../store/store'
-import { monthTotals, expensesByCategory, SAVINGS_CATEGORY } from '../../lib/budgetMath'
+import { monthTotals, monthPlan, SAVINGS_CATEGORY } from '../../lib/budgetMath'
 import {
   TrendingUp, CreditCard, PiggyBank, Target, Wallet,
   ArrowUpRight, ArrowDownRight, Camera, Package,
@@ -45,12 +45,13 @@ function getBudgetAlerts(
   month: number,
   year: number,
 ): BudgetAlert[] {
-  const byCategory = expensesByCategory(budget, bills, month, year)
-  return Object.entries(categoryLimits)
+  // Same numbers as the Budget tab: plans compare against flexible spending only (bills are fixed)
+  const rows = monthPlan(budget, bills, categoryLimits, month, year).rows
+  return rows
     // Saving more than planned is good news, not something to flag
-    .filter(([category]) => category !== SAVINGS_CATEGORY)
-    .map(([category, limit]) => {
-      const spent = byCategory[category] ?? 0
+    .filter(r => r.planned > 0 && r.category !== SAVINGS_CATEGORY)
+    .map(r => {
+      const category = r.category, spent = r.spent, limit = r.planned
       return { category, spent, limit, pct: limit > 0 ? spent / limit : 0 }
     })
     .filter(a => a.pct >= 0.7)

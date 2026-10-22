@@ -1,24 +1,24 @@
 export const INCOME_CATS = ['Salary', 'Freelance', 'Investments', 'Business', 'Other Income']
 
 export const EXPENSE_CATS = [
-  'Rent/Mortgage', 'Groceries', 'Transport', 'Utilities', 'Subscriptions',
+  'Rent/Mortgage', 'Groceries', 'Gas', 'Transport', 'Utilities', 'Subscriptions',
   'Dining Out', 'Entertainment', 'Health', 'Shopping', 'Savings Transfer',
   'Debt Payments', 'Education', 'Insurance', 'Gifts', 'Other',
 ]
 
 /** Everyday categories offered first in the Spending log */
 export const VARIABLE_CATS = [
-  'Groceries', 'Dining Out', 'Transport', 'Shopping', 'Entertainment', 'Health', 'Gifts', 'Other',
+  'Groceries', 'Dining Out', 'Gas', 'Shopping', 'Entertainment', 'Transport', 'Health', 'Gifts', 'Other',
 ]
 
 // Consistent per-category colors used across all views
 const CAT_COLORS: Record<string, string> = {
   'Salary': '#10b981', 'Freelance': '#34d399', 'Investments': '#6ee7b7',
   'Business': '#059669', 'Other Income': '#a7f3d0',
-  'Rent/Mortgage': '#6366f1', 'Groceries': '#0ea5e9', 'Transport': '#10b981',
+  'Rent/Mortgage': '#6366f1', 'Groceries': '#0ea5e9', 'Gas': '#f97316', 'Transport': '#10b981',
   'Utilities': '#f59e0b', 'Subscriptions': '#f43f5e', 'Dining Out': '#a855f7',
   'Entertainment': '#ec4899', 'Health': '#14b8a6', 'Shopping': '#84cc16',
-  'Savings Transfer': '#fb923c', 'Debt Payments': '#38bdf8', 'Education': '#4ade80',
+  'Savings Transfer': '#22c55e', 'Debt Payments': '#38bdf8', 'Education': '#4ade80',
   'Insurance': '#e879f9', 'Gifts': '#fbbf24', 'Other': '#6b7280',
 }
 

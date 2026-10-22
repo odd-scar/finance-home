@@ -14,6 +14,7 @@ import { Assets } from './components/Assets/Assets'
 import { Learn } from './components/Learn/Learn'
 import { AuthScreen, UpdatePasswordScreen } from './components/Auth/AuthScreen'
 import { Modal } from './components/ui/Modal'
+import { LogForm } from './components/Budget/LogForm'
 import { loadFromSupabase, setSupabaseUser, signOutCleanup, rolloverRecurringEntries } from './store/store'
 import { supabase } from './services/supabase'
 import type { User } from './services/supabase'
@@ -26,6 +27,8 @@ import { hasPinSet, isUnlocked, markUnlocked, clearUnlocked, removePin, AUTO_LOC
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard')
   const [quickAddOpen, setQuickAddOpen] = useState(false)
+  // Logging an expense opens in place (any tab) instead of jumping to Budget
+  const [logOpen, setLogOpen] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(() => !localStorage.getItem(ONBOARDING_KEY))
 
   // ── Auth state ───────────────────────────────────────────────────────
@@ -163,7 +166,7 @@ const content: Record<Tab, React.ReactNode> = {
   }
 
   const quickAddItems = [
-    { label: 'Log Expense', icon: <Wallet size={16} />, tab: 'budget' as Tab },
+    { label: 'Log Expense', icon: <Wallet size={16} />, tab: 'budget' as Tab, inPlace: true },
     { label: 'Add Bill', icon: <Receipt size={16} />, tab: 'bills' as Tab },
     { label: 'Add Stock', icon: <TrendingUp size={16} />, tab: 'stocks' as Tab },
     { label: 'Add Goal', icon: <Target size={16} />, tab: 'goals' as Tab },
@@ -246,7 +249,7 @@ const content: Record<Tab, React.ReactNode> = {
                 <button
                   key={item.tab}
                   type="button"
-                  onClick={() => { setActiveTab(item.tab); setQuickAddOpen(false) }}
+                  onClick={() => { setQuickAddOpen(false); if ('inPlace' in item) setLogOpen(true); else setActiveTab(item.tab) }}
                   className="flex items-center gap-3 px-4 py-4 bg-gray-800 hover:bg-gray-700 active:scale-[0.98] rounded-xl text-left transition-all"
                 >
                   <span className="p-2 rounded-lg bg-brand-600/20 text-brand-400">{item.icon}</span>
@@ -273,7 +276,7 @@ const content: Record<Tab, React.ReactNode> = {
                 <button
                   key={item.tab}
                   onClick={() => {
-                    setActiveTab(item.tab)
+                    if ('inPlace' in item) setLogOpen(true); else setActiveTab(item.tab)
                     setQuickAddOpen(false)
                   }}
                   className="flex items-center gap-2 px-4 py-2.5 bg-gray-900 border border-gray-700 hover:border-brand-600 hover:bg-gray-800 text-white text-sm font-medium rounded-xl shadow-xl transition-all whitespace-nowrap"
@@ -308,6 +311,11 @@ const content: Record<Tab, React.ReactNode> = {
         onQuickAdd={() => setQuickAddOpen(o => !o)}
         quickAddOpen={quickAddOpen}
       />
+
+      {/* Quick log — the fastest way to record a purchase from anywhere */}
+      <Modal open={logOpen} onClose={() => setLogOpen(false)} title="Log expense">
+        {logOpen && <LogForm variant="plain" autoFocus />}
+      </Modal>
 
       {/* First-time onboarding tour */}
       {showOnboarding && (

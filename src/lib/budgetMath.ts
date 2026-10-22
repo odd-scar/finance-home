@@ -110,12 +110,32 @@ export function expensesByCategory(budget: BudgetEntry[], bills: Bill[], month: 
 export const SAVINGS_CATEGORY = 'Savings Transfer'
 
 /**
+ * Bill-type categories: the same amount every month, paid no matter what. Spending in
+ * these is always fixed, so they never get a plan (there's nothing to control day to day).
+ */
+export const FIXED_CATEGORIES = new Set(['Rent/Mortgage', 'Insurance', 'Debt Payments', 'Subscriptions'])
+
+export const isFixedCategory = (category: string) => FIXED_CATEGORIES.has(category)
+
+/** One must-pay for the month: a bill from the Bills tab, or a fixed budget entry */
+export interface FixedItem {
+  id: string
+  name: string
+  category: string
+  amount: number
+  /** Set when it comes from the Bills tab */
+  bill?: Bill
+  /** Set when it's a budget entry (so it can be edited) */
+  entry?: BudgetEntry
+}
+
+/**
  * Categories counted as "needs" for the 50/30/20 reference. Everything else that
  * isn't savings — including custom categories like "Starbucks" — counts as a want.
  * (Minimum debt payments are a need; extra payments are commonly counted as savings.)
  */
 export const NEEDS_CATEGORIES = new Set([
-  'Rent/Mortgage', 'Groceries', 'Transport', 'Utilities', 'Health', 'Insurance', 'Debt Payments', 'Education',
+  'Rent/Mortgage', 'Groceries', 'Gas', 'Transport', 'Utilities', 'Health', 'Insurance', 'Debt Payments', 'Education',
 ])
 
 export interface CategoryPlanRow {
@@ -128,8 +148,18 @@ export interface CategoryPlanRow {
 }
 
 export interface MonthPlan extends MonthTotals {
+  /** All spending by category (bills included) — used for the needs/wants/savings split */
   byCategory: Record<string, number>
+  /**
+   * Plan vs actual for flexible spending only. Bills and recurring costs are fixed —
+   * they're must-pays, so they never show up here or count against a plan.
+   * Savings transfers (recurring or logged) count toward the Savings plan.
+   */
   rows: CategoryPlanRow[]
+  /** Bills + fixed expense entries (not savings) — the month's must-pays */
+  fixedTotal: number
+  /** Everything in fixedTotal, biggest first */
+  fixedItems: FixedItem[]
   /** Planned savings not transferred yet — set aside before "left to spend" (pay yourself first) */
   savingsReserve: number
   /** income − everything spent − savingsReserve */
@@ -153,10 +183,28 @@ export function monthPlan(
   const totals = monthTotals(budget, bills, month, year)
   const byCategory = expensesByCategory(budget, bills, month, year)
 
-  const cats = new Set([...Object.keys(byCategory), ...Object.keys(limits).filter(c => limits[c] > 0)])
+  // Fixed: bills, bill-type categories (rent, insurance…), entries named like a bill, and
+  // anything set to repeat monthly. Flexible: everything else, plus any savings transfer.
+  const billNames = new Set(bills.map(b => norm(b.name)))
+  const flexible: Record<string, number> = {}
+  const fixedItems: FixedItem[] = totals.billItems.map(i => ({ id: i.bill.id, name: i.bill.name, category: i.category, amount: i.amount, bill: i.bill }))
+  for (const b of budget) {
+    if (b.month !== month || b.year !== year || b.type !== 'expense') continue
+    const fixed = b.category !== SAVINGS_CATEGORY &&
+      (b.recurring || isFixedCategory(b.category) || billNames.has(norm(b.description)))
+    if (fixed) fixedItems.push({ id: b.id, name: b.description || b.category, category: b.category, amount: b.amount, entry: b })
+    else flexible[b.category] = (flexible[b.category] ?? 0) + b.amount
+  }
+  fixedItems.sort((a, b) => b.amount - a.amount)
+  const fixedTotal = fixedItems.reduce((s, i) => s + i.amount, 0)
+
+  const cats = new Set([
+    ...Object.keys(flexible),
+    ...Object.keys(limits).filter(c => limits[c] > 0 && !isFixedCategory(c)),
+  ])
   const rows = [...cats]
     .map(category => {
-      const spent = byCategory[category] ?? 0
+      const spent = flexible[category] ?? 0
       const planned = limits[category] ?? 0
       return { category, spent, planned, remaining: planned - spent }
     })
@@ -182,7 +230,7 @@ export function monthPlan(
     else split.wants += amt
   }
 
-  return { ...totals, byCategory, rows, savingsReserve, leftToSpend, daysLeft, perDay, split }
+  return { ...totals, byCategory, rows, fixedTotal, fixedItems, savingsReserve, leftToSpend, daysLeft, perDay, split }
 }
 
 export interface ZeroBasedSummary {
@@ -195,13 +243,13 @@ export interface ZeroBasedSummary {
 }
 
 /**
- * Zero-based budgeting ("give every dollar a job"). A category's assigned amount is
- * its plan, or what was actually spent if that's higher — so bills, fixed costs and
- * unplanned spending are counted automatically, and overspending eats into the
- * unassigned money until it's covered.
+ * Zero-based budgeting ("give every dollar a job"). Fixed costs (bills, recurring) are
+ * assigned automatically; each flexible category is assigned its plan, or what it
+ * actually took if that's higher — so unplanned spending counts too, and overspending
+ * eats into the unassigned money until it's covered.
  */
-export function zeroBased(plan: Pick<MonthPlan, 'income' | 'rows'>): ZeroBasedSummary {
-  const assigned = plan.rows.reduce((s, r) => s + Math.max(r.planned, r.spent), 0)
+export function zeroBased(plan: Pick<MonthPlan, 'income' | 'rows' | 'fixedTotal'>): ZeroBasedSummary {
+  const assigned = plan.fixedTotal + plan.rows.reduce((s, r) => s + Math.max(r.planned, r.spent), 0)
   const leftToAssign = Math.round((plan.income - assigned) * 100) / 100
   return { assigned, leftToAssign, balanced: Math.abs(leftToAssign) < 0.01 }
 }

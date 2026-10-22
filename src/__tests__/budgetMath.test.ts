@@ -99,6 +99,26 @@ describe('monthPlan', () => {
       .toBe('Savings Transfer')
   })
 
+  it('keeps bills and bill-type spending out of the plan', () => {
+    const p = monthPlan(
+      [
+        entry('rent', { category: 'Rent/Mortgage', description: 'Monthly rent', amount: 1600 }),
+        entry('loan', { category: 'Debt Payments', description: 'Car loan', amount: 300 }),
+        entry('net', { category: 'Utilities', description: 'Internet', amount: 65 }), // same name as a bill
+        entry('power', { category: 'Utilities', description: 'Electric', amount: 90 }), // flexible
+        entry('groc', { amount: 120 }),
+      ],
+      [bill('b-net', { name: 'Internet', category: 'utilities', amount: 65 })],
+      { 'Rent/Mortgage': 1600, Groceries: 400 },
+      3, 2026, today
+    )
+    expect(p.rows.map(r => r.category).sort()).toEqual(['Groceries', 'Utilities'])
+    expect(p.rows.find(r => r.category === 'Utilities')?.spent).toBe(90)
+    expect(p.fixedItems.map(i => i.name)).toEqual(['Monthly rent', 'Car loan', 'Internet'])
+    expect(p.fixedTotal).toBe(1965)
+    expect(p.fixedTotal + p.rows.reduce((s, r) => s + r.spent, 0)).toBe(p.expenses)
+  })
+
   it('no daily pace for past months', () => {
     const p = monthPlan(budget, [], limits, 2, 2026, today)
     expect(p.perDay).toBeNull()

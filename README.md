@@ -5,8 +5,10 @@ It runs in the browser, installs to a phone's home screen (PWA), and syncs acros
 
 ## Features
 
-- **Budget**: One screen for the month: plan vs actual by category, a quick form to log spending
-  (`12+8` works), a zero-based mode, and "Cover it" to move money between plans.
+- **Budget**: One screen for the month. Bills and recurring costs are counted as *fixed*. You plan the
+  flexible categories (dining out, gas, shopping…), log spending with a quick form (`12+8` works),
+  and compare planned vs actual in a list or bar chart. Supports a zero-based mode and "Cover it" to
+  move money between plans. Logging a savings transfer can also add to a savings account and a goal.
 - **Dashboard**: Net worth, cash flow, and dismissible alerts.
 - **Bills**: Recurring bills with due dates and autopay.
 - **Savings / Goals / Debt**: Accounts with history, goal tracking, and avalanche vs snowball payoff.
@@ -41,7 +43,7 @@ src/
   hooks/                React hooks (useAppStore subscribes a component to the store)
   lib/                  pure logic with no network or storage: easy to test
     finance.ts          money formatting, dates, payoff and growth math
-    budgetMath.ts       month totals, plan vs actual, zero-based
+    budgetMath.ts       month totals, plan vs actual, fixed vs flexible, zero-based
     categories.ts       category lists and colors
     mathExpr.ts         calculator for money inputs (no eval)
     stockAnalysis.ts    trend, volatility, and return stats

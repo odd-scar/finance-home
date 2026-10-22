@@ -3,6 +3,7 @@ import { v4 as uuid } from 'uuid'
 import { demoStocks, demoDebts, demoSavings, demoGoals, demoTrips, demoBudget, demoBills, demoAssets } from '../data/demo'
 import { encryptData, decryptData } from '../services/cryptoStore'
 import { supabase } from '../services/supabase'
+import { SAVINGS_CATEGORY } from '../lib/budgetMath'
 import { PENDING_SYNC_KEY } from '../services/cacheHygiene'
 
 const STORAGE_KEY = 'finance-home-data'
@@ -463,12 +464,48 @@ export const removeTripExpense = (tripId: string, expId: string) =>
   }))
 
 // Budget
+const cents = (n: number) => Math.round(n * 100) / 100
+
+/**
+ * A logged savings transfer can point at a savings account and/or a goal. Adding the
+ * entry adds the money there; removing it (or undo) takes it back out — so the
+ * Budget, Savings and Goals numbers never drift apart.
+ */
+function applySavingsLinks(s: AppState, e: BudgetEntry | undefined, sign: 1 | -1): AppState {
+  if (!e || e.type !== 'expense' || e.category !== SAVINGS_CATEGORY) return s
+  let next = s
+  if (e.savingsAccountId) {
+    next = {
+      ...next,
+      savings: next.savings.map(a => {
+        if (a.id !== e.savingsAccountId) return a
+        const balance = cents(a.balance + sign * e.amount)
+        return { ...a, balance, history: upsertHistory(a.history, balance) }
+      }),
+    }
+  }
+  if (e.goalId) {
+    next = {
+      ...next,
+      goals: next.goals.map(g => (g.id === e.goalId ? { ...g, currentAmount: Math.max(0, cents(g.currentAmount + sign * e.amount)) } : g)),
+    }
+  }
+  return next
+}
+
 export const addBudgetEntry = (entry: BudgetEntry) =>
-  commit(s => ({ ...s, budget: [...s.budget, entry] }))
+  commit(s => applySavingsLinks({ ...s, budget: [...s.budget, entry] }, entry, 1))
 export const updateBudgetEntry = (id: string, updates: Partial<BudgetEntry>) =>
-  commit(s => ({ ...s, budget: s.budget.map(b => (b.id === id ? { ...b, ...updates } : b)) }))
+  commit(s => {
+    const before = s.budget.find(b => b.id === id)
+    if (!before) return s
+    const after = { ...before, ...updates }
+    // Reverse the old effect, then apply the new one (handles amount or link changes)
+    const reverted = applySavingsLinks(s, before, -1)
+    return applySavingsLinks({ ...reverted, budget: reverted.budget.map(b => (b.id === id ? after : b)) }, after, 1)
+  })
 export const removeBudgetEntry = (id: string) =>
-  commit(s => ({ ...s, budget: s.budget.filter(b => b.id !== id) }))
+  commit(s => applySavingsLinks({ ...s, budget: s.budget.filter(b => b.id !== id) }, s.budget.find(b => b.id === id), -1))
 
 /**
  * Roll over recurring budget entries from the previous month into `month/year`.
@@ -509,7 +546,9 @@ export function rolloverRecurringEntries(month: number, year: number) {
       const amount = r.thisMonthOverride && r.originalRecurringAmount !== undefined
         ? r.originalRecurringAmount
         : r.amount
-      const { thisMonthOverride: _a, originalRecurringAmount: _b, date: prevDate, ...rest } = r
+      // Links to a savings account/goal are not copied: a carried-over entry
+      // shouldn't silently add money to an account again each month
+      const { thisMonthOverride: _a, originalRecurringAmount: _b, date: prevDate, savingsAccountId: _c, goalId: _d, ...rest } = r
       // Same day of the month in the new month (clamped, so the 31st → Feb 28)
       const day = prevDate ? Math.min(Number(prevDate.slice(8, 10)) || 1, new Date(year, month, 0).getDate()) : null
       return {

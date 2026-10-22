@@ -85,6 +85,10 @@ export interface BudgetEntry {
   originalRecurringAmount?: number
   /** "YYYY-MM-DD" — the day the money was spent or received */
   date?: string
+  /** Savings transfers only: the savings account this money went into (its balance is kept in step) */
+  savingsAccountId?: string
+  /** Savings transfers only: the goal this money counts toward (its progress is kept in step) */
+  goalId?: string
   addedAt: string
 }
 
