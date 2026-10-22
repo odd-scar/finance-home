@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { evaluate, isExpression } from '../../utils/mathExpr'
-import { formatCurrency } from '../../utils/finance'
+import { evaluate, isExpression } from '../../lib/mathExpr'
+import { formatCurrency } from '../../lib/finance'
 
 interface MoneyInputProps {
   value: string

@@ -9,7 +9,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import type { GoogleGenAI, GenerateContentResponse } from '@google/genai'
 import {
   TRIP_ITEM_CATEGORIES, type TripAssistantRequest, type TripAssistantResult, type TripSuggestion, type TripItemCategory,
-} from '../utils/tripAssistantTypes.js'
+} from '../types/tripAssistant.js'
 
 /** Claude Opus 5.5 through Vercel AI Gateway's Anthropic-compatible endpoint */
 export const MODEL = 'anthropic/claude-opus-5.5'

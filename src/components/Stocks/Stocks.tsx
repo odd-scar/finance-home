@@ -1,16 +1,16 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAppStore } from '../../hooks/useAppStore'
-import { formatCurrency, formatPercent, calcPctChange } from '../../utils/finance'
-import { simulateRefresh, getStockInfo } from '../../utils/mockStockData'
-import { analyzeStock, analyzePortfolio, portfolioInsights } from '../../utils/stockAnalysis'
-import { useHistories, BENCHMARK } from '../../utils/stockHistory'
+import { formatCurrency, formatPercent, calcPctChange } from '../../lib/finance'
+import { simulateRefresh, getStockInfo } from '../../data/mockStocks'
+import { analyzeStock, analyzePortfolio, portfolioInsights } from '../../lib/stockAnalysis'
+import { useHistories, BENCHMARK } from '../../services/stockHistory'
 import { CompanyAnalysis, InsightList } from './CompanyAnalysis'
-import { parseAmount } from '../../utils/mathExpr'
+import { parseAmount } from '../../lib/mathExpr'
 import {
   fetchQuotes, getCacheAge,
   type FetchStatus, type QuoteResult,
-} from '../../utils/alphaVantage'
-import { refreshStockPrices, addStock, removeStock, updateStock } from '../../store/store'
+} from '../../services/quotes'
+import { refreshStockPrices, addStock, removeStock, updateStock, moveStock as moveStockInList, restoreStock } from '../../store/store'
 import { Modal } from '../ui/Modal'
 import { Button, Input, FormField } from '../ui/FormField'
 import { Card } from '../ui/Card'
@@ -18,7 +18,7 @@ import { LineChart, Line, ResponsiveContainer, Tooltip, PieChart, Pie, Cell } fr
 import {
   Plus, Trash2, TrendingUp, TrendingDown,
   Star, AlertTriangle, CheckCircle, Clock,
-  RefreshCw, Loader2, Edit2, Search, ShieldCheck, X,
+  RefreshCw, Loader2, Edit2, Search, ShieldCheck, X, ArrowUpDown, ChevronUp, ChevronDown, Check,
 } from 'lucide-react'
 import { v4 as uuid } from 'uuid'
 import { Stock } from '../../types'
@@ -117,6 +117,74 @@ export function Stocks() {
     setResearch({ symbol: sym, price })
     setResearchInput('')
   }
+  // ── Reorder + delete-with-undo ────────────────────────────────────────
+  const [reordering, setReordering] = useState(false)
+  const [removed, setRemoved] = useState<{ stock: Stock; index: number } | null>(null)
+  const removedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => { if (removedTimer.current) clearTimeout(removedTimer.current) }, [])
+
+  const handleRemove = (stock: Stock) => {
+    setRemoved({ stock, index: stocks.findIndex(s => s.id === stock.id) })
+    removeStock(stock.id)
+    if (removedTimer.current) clearTimeout(removedTimer.current)
+    removedTimer.current = setTimeout(() => setRemoved(null), 6000)
+  }
+
+  const reorderButton = (
+    <button
+      type="button"
+      onClick={() => setReordering(r => !r)}
+      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+        reordering ? 'bg-brand-600 border-brand-600 text-white' : 'border-gray-700 text-gray-400 hover:text-white'
+      }`}
+    >
+      {reordering ? <><Check size={12} /> Done</> : <><ArrowUpDown size={12} /> Reorder</>}
+    </button>
+  )
+
+  /** Up/down arrows while reordering; otherwise edit (holdings only) and delete */
+  const rowActions = (stock: Stock, list: Stock[], canEdit = true) => {
+    const i = list.findIndex(s => s.id === stock.id)
+    if (reordering) {
+      return (
+        <div className="flex gap-1" onClick={e => e.stopPropagation()}>
+          <button type="button" disabled={i === 0} onClick={() => moveStockInList(stock.id, -1)} aria-label={`Move ${stock.symbol} up`}
+            className="p-1.5 rounded-lg text-gray-300 hover:bg-gray-700 disabled:opacity-25">
+            <ChevronUp size={16} />
+          </button>
+          <button type="button" disabled={i === list.length - 1} onClick={() => moveStockInList(stock.id, 1)} aria-label={`Move ${stock.symbol} down`}
+            className="p-1.5 rounded-lg text-gray-300 hover:bg-gray-700 disabled:opacity-25">
+            <ChevronDown size={16} />
+          </button>
+        </div>
+      )
+    }
+    return (
+      <div className="flex gap-1" onClick={e => e.stopPropagation()}>
+        {canEdit && (
+          <button
+            type="button"
+            onClick={() => { setEditStock(stock); setEditStockForm({ shares: String(stock.shares), purchasePrice: String(stock.purchasePrice) }) }}
+            className="p-1.5 rounded-lg hover:bg-brand-500/20 text-gray-600 hover:text-brand-400 transition-colors"
+            title="Edit position"
+            aria-label={`Edit ${stock.symbol}`}
+          >
+            <Edit2 size={14} />
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => handleRemove(stock)}
+          className="p-1.5 rounded-lg hover:bg-rose-500/20 text-gray-600 hover:text-rose-400 transition-colors"
+          title="Remove"
+          aria-label={`Remove ${stock.symbol}`}
+        >
+          <Trash2 size={14} />
+        </button>
+      </div>
+    )
+  }
+
   /** Sparkline: last ~6 weeks of real closes when available, else the refresh log */
   const sparkData = (s: Stock) => histories[s.symbol]?.closes.slice(-30) ?? s.priceHistory.slice(-13)
 
@@ -336,8 +404,9 @@ export function Stocks() {
 
       {/* Holdings table */}
       <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-800">
-          <h3 className="font-semibold text-white">Portfolio Holdings</h3>
+        <div className="flex items-center px-5 py-3 border-b border-gray-800">
+          <h3 className="font-semibold text-white flex-1">Portfolio Holdings</h3>
+          {ownedStocks.length > 1 && reorderButton}
         </div>
 
         {/* Desktop table */}
@@ -389,26 +458,7 @@ export function Stocks() {
                     <td className="px-4 py-3">
                       <Sparkline data={sparkData(stock)} positive={allTimePct >= 0} />
                     </td>
-                    <td className="px-4 py-3">
-                      <div className="flex gap-1">
-                        <button
-                          type="button"
-                          onClick={e => { e.stopPropagation(); setEditStock(stock); setEditStockForm({ shares: String(stock.shares), purchasePrice: String(stock.purchasePrice) }) }}
-                          className="p-1.5 rounded-lg hover:bg-brand-500/20 text-gray-600 hover:text-brand-400 transition-colors"
-                          title="Edit position"
-                        >
-                          <Edit2 size={14} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={e => { e.stopPropagation(); removeStock(stock.id) }}
-                          className="p-1.5 rounded-lg hover:bg-rose-500/20 text-gray-600 hover:text-rose-400 transition-colors"
-                          title="Remove"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </td>
+                    <td className="px-4 py-3">{rowActions(stock, ownedStocks)}</td>
                   </tr>
                 )
               })}
@@ -424,7 +474,6 @@ export function Stocks() {
           {ownedStocks.map(stock => {
             const value = stock.shares * stock.currentPrice
             const allTimePct = pctChange(stock)
-            const todayPct = dayChange(stock)
             return (
               <div
                 key={stock.id}
@@ -445,23 +494,7 @@ export function Stocks() {
                   </p>
                   <p className="text-xs text-gray-500">{formatCurrency(value)}</p>
                 </div>
-                <div className="flex gap-1 shrink-0">
-                  <button
-                    type="button"
-                    onClick={e => { e.stopPropagation(); setEditStock(stock); setEditStockForm({ shares: String(stock.shares), purchasePrice: String(stock.purchasePrice) }) }}
-                    className="p-1.5 rounded-lg hover:bg-brand-500/20 text-gray-600 hover:text-brand-400 transition-colors"
-                    title="Edit position"
-                  >
-                    <Edit2 size={14} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={e => { e.stopPropagation(); removeStock(stock.id) }}
-                    className="p-1.5 rounded-lg hover:bg-rose-500/20 text-gray-600 hover:text-rose-400 transition-colors"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
+                <div className="shrink-0">{rowActions(stock, ownedStocks)}</div>
               </div>
             )
           })}
@@ -533,10 +566,11 @@ export function Stocks() {
 
       {/* Watchlist */}
       <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-800">
-          <h3 className="font-semibold text-white flex items-center gap-2">
+        <div className="flex items-center px-5 py-3 border-b border-gray-800">
+          <h3 className="font-semibold text-white flex items-center gap-2 flex-1">
             <Star size={16} className="text-amber-400" /> Watchlist
           </h3>
+          {watchlistStocks.length > 1 && reorderButton}
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-5">
           {watchlistStocks.map(stock => {
@@ -548,9 +582,7 @@ export function Stocks() {
                     <p className="font-bold text-white">{stock.symbol}</p>
                     <p className="text-xs text-gray-500">{stock.name}</p>
                   </div>
-                  <button type="button" onClick={() => removeStock(stock.id)} className="p-1 text-gray-600 hover:text-rose-400">
-                    <Trash2 size={13} />
-                  </button>
+                  {rowActions(stock, watchlistStocks, false)}
                 </div>
                 <div className="flex items-end justify-between">
                   <div>
@@ -732,6 +764,21 @@ export function Stocks() {
           </div>
         )}
       </Modal>
+
+      {/* Undo a removal */}
+      {removed && (
+        <div className="fixed bottom-32 lg:bottom-8 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-gray-800 border border-gray-700 text-sm px-4 py-3 rounded-2xl shadow-2xl animate-slide-up whitespace-nowrap">
+          <Trash2 size={14} className="text-gray-400 shrink-0" />
+          <span className="text-gray-300"><span className="text-white font-medium">{removed.stock.symbol}</span> removed</span>
+          <button
+            type="button"
+            onClick={() => { restoreStock(removed.stock, removed.index); setRemoved(null) }}
+            className="ml-1 px-3 py-1 bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold rounded-lg"
+          >
+            Undo
+          </button>
+        </div>
+      )}
 
       {/* ── Stock Detail Modal ────────────────────────────────────────── */}
       <Modal open={!!selectedStock} onClose={() => setSelected(null)} title={selectedStock ? `${selectedStock.symbol} — ${selectedStock.name}` : ''} size="lg">

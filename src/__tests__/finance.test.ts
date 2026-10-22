@@ -12,7 +12,7 @@ import {
   daysUntil,
   formatDate,
   monthLabel,
-} from '../finance'
+} from '../lib/finance'
 
 // ── formatCurrency ─────────────────────────────────────────────────────────
 

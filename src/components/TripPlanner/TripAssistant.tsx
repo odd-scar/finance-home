@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { Sparkles, Loader2, ExternalLink, Check, Plus, Info, Plane, Hotel, Utensils, Ticket, Bus } from 'lucide-react'
 import { Modal } from '../ui/Modal'
 import { Button } from '../ui/FormField'
-import { formatCurrency, formatDate } from '../../utils/finance'
-import { askTripAssistant } from '../../utils/tripAssistantClient'
-import { MAX_REQUEST_CHARS, type TripAssistantResult, type TripSuggestion } from '../../utils/tripAssistantTypes'
+import { formatCurrency, formatDate } from '../../lib/finance'
+import { askTripAssistant } from '../../services/tripAssistant'
+import { MAX_REQUEST_CHARS, type TripAssistantResult, type TripSuggestion } from '../../types/tripAssistant'
 import type { Trip } from '../../types'
 
 const CAT_COLORS: Record<string, string> = {

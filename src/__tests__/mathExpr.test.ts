@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { evaluate, isExpression, parseAmount, parseNumber } from '../mathExpr'
+import { evaluate, isExpression, parseAmount, parseNumber } from '../lib/mathExpr'
 
 describe('amount calculator', () => {
   it('adds a round trip (departure + return)', () => {

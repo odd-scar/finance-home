@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { DollarSign, Lock, Eye, EyeOff, ShieldCheck, AlertTriangle, LogOut } from 'lucide-react'
-import { savePin, verifyPin, hasPinSet, removePin, markUnlocked, MAX_PIN_ATTEMPTS } from '../../utils/auth'
+import { savePin, verifyPin, hasPinSet, removePin, markUnlocked, MAX_PIN_ATTEMPTS } from '../../services/pinLock'
 
 const MIN_PIN = 4
 const MAX_PIN = 8

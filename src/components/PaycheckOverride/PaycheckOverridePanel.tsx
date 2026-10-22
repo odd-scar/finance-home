@@ -2,8 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { X, Plus, Trash2, Zap, ChevronDown, ChevronUp } from 'lucide-react'
 import { useAppStore } from '../../hooks/useAppStore'
-import { formatCurrency } from '../../utils/finance'
-import { paycheckPlan, PAY_FREQUENCY_LABELS, type PayFrequency } from '../../utils/budgetMath'
+import { formatCurrency } from '../../lib/finance'
+import { paycheckPlan, PAY_FREQUENCY_LABELS, type PayFrequency } from '../../lib/budgetMath'
 import { v4 as uuid } from 'uuid'
 
 interface OneTimeItem {

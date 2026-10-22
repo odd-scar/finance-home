@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import Anthropic from '@anthropic-ai/sdk'
-import { runTripAssistant, sanitizeResult, buildUserPrompt, TripAssistantError } from '../../server/tripAssistant'
-import type { TripAssistantRequest } from '../tripAssistantTypes'
+import { runTripAssistant, sanitizeResult, buildUserPrompt, TripAssistantError } from '../server/tripAssistant'
+import type { TripAssistantRequest } from '../types/tripAssistant'
 
 const req: TripAssistantRequest = {
   request: 'Round trip flights Houston to Tokyo, 2 adults',
@@ -122,7 +122,7 @@ describe('runTripAssistant', () => {
 })
 
 // ── Gemini path ─────────────────────────────────────────────────────────────
-import { runGeminiAssistant } from '../../server/tripAssistant'
+import { runGeminiAssistant } from '../server/tripAssistant'
 import type { GoogleGenAI } from '@google/genai'
 
 function fakeGemini(research: { text: string; chunks?: { uri: string; title: string }[]; blocked?: boolean }, structuredText: string) {
@@ -175,7 +175,7 @@ describe('runGeminiAssistant', () => {
 })
 
 // ── Gemini model selection ──────────────────────────────────────────────────
-import { rankGeminiModels, isModelUnavailable } from '../../server/tripAssistant'
+import { rankGeminiModels, isModelUnavailable } from '../server/tripAssistant'
 
 describe('Gemini model selection', () => {
   it('prefers the newest stable Flash, then Flash-Lite; skips previews and specialty models', () => {
@@ -212,7 +212,7 @@ describe('Gemini model selection', () => {
 
   it('moves to the next model when one is out of quota, and keeps it for later', async () => {
     vi.resetModules()
-    const fresh = await import('../../server/tripAssistant')
+    const fresh = await import('../server/tripAssistant')
     const list = vi.fn().mockResolvedValue((async function* () {
       yield { name: 'models/gemini-3.8-flash', supportedActions: ['generateContent'] }
       yield { name: 'models/gemini-3.7-flash', supportedActions: ['generateContent'] }
@@ -229,7 +229,7 @@ describe('Gemini model selection', () => {
 
   it('reports the quota error when every model is out', async () => {
     vi.resetModules()
-    const fresh = await import('../../server/tripAssistant')
+    const fresh = await import('../server/tripAssistant')
     const list = vi.fn().mockResolvedValue((async function* () {
       yield { name: 'models/gemini-3.8-flash', supportedActions: ['generateContent'] }
       yield { name: 'models/gemini-3.7-flash', supportedActions: ['generateContent'] }

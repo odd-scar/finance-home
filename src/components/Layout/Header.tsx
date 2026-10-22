@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Tab } from '../../types'
 import { LogOut, Lock, RefreshCw, Loader2 } from 'lucide-react'
-import { clearAppCache } from '../../utils/appCache'
+import { clearAppCache } from '../../services/appCache'
 import { Modal } from '../ui/Modal'
 import { SecuritySettings } from '../Lock/LockScreen'
 

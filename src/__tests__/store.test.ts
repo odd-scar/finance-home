@@ -5,7 +5,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 
 // Mock Supabase so we don't make real network calls from tests
-vi.mock('../../utils/supabase', () => ({
+vi.mock('../services/supabase', () => ({
   supabase: {
     from: () => ({ upsert: vi.fn().mockResolvedValue({ error: null }) }),
     auth: { getSession: vi.fn(), onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } })) },
@@ -36,9 +36,9 @@ import {
   snapshotNetWorth,
   resetToDemo,
   subscribe,
-} from '../../store/store'
+} from '../store/store'
 
-import type { Stock, Debt, SavingsAccount, FinancialGoal, Bill, Asset, BudgetEntry } from '../../types'
+import type { Stock, Debt, SavingsAccount, FinancialGoal, Bill, Asset, BudgetEntry } from '../types'
 
 // ── helpers ────────────────────────────────────────────────────────────────
 

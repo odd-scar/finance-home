@@ -11,7 +11,7 @@
  * Covers US-listed companies that file 10-Ks. Funds/ETFs and most foreign
  * companies don't report this way, so they return 404 with a clear message.
  */
-import { extractFundamentals, type CompanyFacts } from '../src/utils/secFacts'
+import { extractFundamentals, type CompanyFacts } from '../src/lib/secFacts'
 
 export const config = { runtime: 'edge' }
 

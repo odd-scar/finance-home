@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useAppStore } from '../../hooks/useAppStore'
-import { formatCurrency, formatDate, parseLocalDate, daysUntil } from '../../utils/finance'
+import { formatCurrency, formatDate, parseLocalDate, daysUntil } from '../../lib/finance'
 import { addTrip, removeTrip, updateTrip, addTripExpense, updateTripExpense, removeTripExpense } from '../../store/store'
 import { Modal } from '../ui/Modal'
 import { Button, Input, FormField, Select } from '../ui/FormField'
@@ -12,7 +12,7 @@ import { v4 as uuid } from 'uuid'
 import { Trip, TripExpense } from '../../types'
 import { MoneyInput } from '../ui/MoneyInput'
 import { useBatchAdd, JustAdded } from '../ui/BatchAdd'
-import { parseAmount } from '../../utils/mathExpr'
+import { parseAmount } from '../../lib/mathExpr'
 import { TripAssistant } from './TripAssistant'
 
 const TOOLTIP_STYLE = {

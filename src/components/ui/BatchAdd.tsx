@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { CheckCircle2 } from 'lucide-react'
-import { formatCurrency } from '../../utils/finance'
+import { formatCurrency } from '../../lib/finance'
 
 export interface AddedItem { id: string; label: string; amount: number | null }
 

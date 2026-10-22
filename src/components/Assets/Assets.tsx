@@ -8,7 +8,7 @@ import { v4 as uuid } from 'uuid'
 import { Asset } from '../../types'
 import { MoneyInput } from '../ui/MoneyInput'
 import { useBatchAdd, JustAdded } from '../ui/BatchAdd'
-import { parseAmount } from '../../utils/mathExpr'
+import { parseAmount } from '../../lib/mathExpr'
 
 const CATEGORIES = ['vehicle', 'real_estate', 'electronics', 'collectibles', 'other'] as const
 

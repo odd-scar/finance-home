@@ -1,8 +1,9 @@
-import { AppState, Stock, Debt, SavingsAccount, FinancialGoal, Trip, TripExpense, BudgetEntry, Bill, Asset, NetWorthSnapshot, IncomeHistory } from '../types'
+import { AppState, Stock, Debt, SavingsAccount, FinancialGoal, Trip, TripExpense, BudgetEntry, Bill, Asset, NetWorthSnapshot } from '../types'
 import { v4 as uuid } from 'uuid'
 import { demoStocks, demoDebts, demoSavings, demoGoals, demoTrips, demoBudget, demoBills, demoAssets } from '../data/demo'
-import { encryptData, decryptData } from '../utils/cryptoStore'
-import { supabase } from '../utils/supabase'
+import { encryptData, decryptData } from '../services/cryptoStore'
+import { supabase } from '../services/supabase'
+import { PENDING_SYNC_KEY } from '../services/cacheHygiene'
 
 const STORAGE_KEY = 'finance-home-data'
 
@@ -38,6 +39,8 @@ async function pushToSupabase(): Promise<boolean> {
         { onConflict: 'user_id' }
       )
     if (error) { console.warn('Supabase sync failed:', error); return false }
+    // Everything on this device is now in the cloud
+    try { localStorage.removeItem(PENDING_SYNC_KEY) } catch { /* storage unavailable */ }
     return true
   } catch (err) {
     console.warn('Supabase sync failed (offline?):', err)
@@ -90,6 +93,18 @@ export async function loadFromSupabase(userId: string): Promise<void> {
   try {
     sameUserCache = localStorage.getItem(LAST_USER_KEY) === userId && !!localStorage.getItem(STORAGE_KEY)
   } catch { /* storage unavailable */ }
+
+  // This device has changes that never reached the cloud (e.g. made offline). Pulling
+  // the cloud copy now would silently throw them away — upload them instead.
+  let pendingLocal = false
+  try { pendingLocal = sameUserCache && !!localStorage.getItem(PENDING_SYNC_KEY) } catch { /* storage unavailable */ }
+  if (pendingLocal) {
+    _cloudLoadedFor = userId
+    _syncEnabled = true
+    listeners.forEach(fn => fn())
+    void flushSync()
+    return
+  }
 
   if (!sameUserCache) {
     // Clear any stale local data from a previous user's session before we load
@@ -182,6 +197,7 @@ export function signOutCleanup() {
   try {
     localStorage.removeItem(STORAGE_KEY)
     localStorage.removeItem(LAST_USER_KEY)
+    localStorage.removeItem(PENDING_SYNC_KEY)
   } catch { /* quota */ }
   state = emptyState()
   listeners.forEach(fn => fn())
@@ -309,6 +325,11 @@ function commit(updater: (prev: AppState) => AppState) {
     console.warn('localStorage save failed (quota exceeded?):', err)
     // State is still in memory; Supabase sync will preserve data if logged in
   }
+  // Mark that this device holds changes the cloud doesn't have yet (cleared once saved).
+  // Only for a loaded, signed-in account — never for an empty/failed-load state.
+  if (_supabaseUserId && _syncEnabled) {
+    try { localStorage.setItem(PENDING_SYNC_KEY, '1') } catch { /* storage unavailable */ }
+  }
   scheduleSyncToSupabase()
   listeners.forEach(fn => fn())
 }
@@ -317,6 +338,32 @@ function commit(updater: (prev: AppState) => AppState) {
 export const addStock = (stock: Stock) => commit(s => ({ ...s, stocks: [...s.stocks, stock] }))
 export const updateStock = (id: string, updates: Partial<Stock>) =>
   commit(s => ({ ...s, stocks: s.stocks.map(st => (st.id === id ? { ...st, ...updates } : st)) }))
+/**
+ * Move a stock up (-1) or down (+1) within its own list — holdings and watchlist are
+ * ordered separately, so a holding never jumps into the watchlist's order.
+ */
+export const moveStock = (id: string, direction: -1 | 1) =>
+  commit(s => {
+    const stock = s.stocks.find(st => st.id === id)
+    if (!stock) return s
+    const isWatch = !!stock.watchlist
+    // Positions (in the full array) of stocks in the same list, in display order
+    const positions = s.stocks.map((st, i) => (!!st.watchlist === isWatch ? i : -1)).filter(i => i >= 0)
+    const at = positions.indexOf(s.stocks.indexOf(stock))
+    const swapWith = positions[at + direction]
+    if (swapWith === undefined) return s
+    const stocks = [...s.stocks]
+    ;[stocks[positions[at]], stocks[swapWith]] = [stocks[swapWith], stocks[positions[at]]]
+    return { ...s, stocks }
+  })
+/** Put a removed stock back where it was (undo) */
+export const restoreStock = (stock: Stock, index: number) =>
+  commit(s => {
+    if (s.stocks.some(st => st.id === stock.id)) return s
+    const stocks = [...s.stocks]
+    stocks.splice(Math.min(Math.max(index, 0), stocks.length), 0, stock)
+    return { ...s, stocks }
+  })
 export const removeStock = (id: string) =>
   commit(s => ({ ...s, stocks: s.stocks.filter(st => st.id !== id) }))
 export const refreshStockPrices = (

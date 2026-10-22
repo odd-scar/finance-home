@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { PriceHistory } from './stockAnalysis'
+import type { PriceHistory } from '../lib/stockAnalysis'
 
 export const HISTORY_CACHE_KEY = 'finance-home-history-cache'
 const TTL_MS = 6 * 60 * 60 * 1000 // daily data — 6 hours is plenty fresh

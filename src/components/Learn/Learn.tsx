@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useAppStore } from '../../hooks/useAppStore'
-import { formatCurrency } from '../../utils/finance'
-import { monthTotals } from '../../utils/budgetMath'
+import { formatCurrency } from '../../lib/finance'
+import { monthTotals } from '../../lib/budgetMath'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from 'recharts'
@@ -139,14 +139,6 @@ const TOOLTIP_STYLE = {
 }
 
 // ─── Compound interest calculation ───────────────────────────────────────────
-
-function calcCompound(monthly: number, years: number, annualRate: number, lump = 0) {
-  const r = annualRate / 100 / 12
-  const n = years * 12
-  const fvContrib = r > 0 ? monthly * ((Math.pow(1 + r, n) - 1) / r) : monthly * n
-  const fvLump = lump * Math.pow(1 + r, n)
-  return fvContrib + fvLump
-}
 
 function buildCompoundData(monthly: number, years: number, annualRate: number, lump = 0) {
   const r = annualRate / 100 / 12

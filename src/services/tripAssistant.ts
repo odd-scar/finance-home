@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import type { TripAssistantRequest, TripAssistantResult } from './tripAssistantTypes'
+import type { TripAssistantRequest, TripAssistantResult } from '../types/tripAssistant'
 
 export type TripAssistantResponse =
   | { ok: true; result: TripAssistantResult }

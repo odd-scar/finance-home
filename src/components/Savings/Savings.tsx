@@ -1,18 +1,18 @@
 import { useState } from 'react'
 import { useAppStore } from '../../hooks/useAppStore'
-import { formatCurrency, projectGrowth } from '../../utils/finance'
+import { formatCurrency, projectGrowth } from '../../lib/finance'
 import { addSavings, removeSavings, updateSavings, updateSavingsNote } from '../../store/store'
 import { Modal } from '../ui/Modal'
 import { Button, Input, FormField, Select } from '../ui/FormField'
 import { ProgressBar } from '../ui/ProgressBar'
 import { Card } from '../ui/Card'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
-import { Plus, Trash2, Edit2, PiggyBank, TrendingUp, StickyNote } from 'lucide-react'
+import { Plus, Trash2, Edit2, StickyNote } from 'lucide-react'
 import { v4 as uuid } from 'uuid'
 import { SavingsAccount } from '../../types'
 import { MoneyInput } from '../ui/MoneyInput'
 import { useBatchAdd, JustAdded } from '../ui/BatchAdd'
-import { parseAmount, parseNumber } from '../../utils/mathExpr'
+import { parseAmount, parseNumber } from '../../lib/mathExpr'
 
 const TOOLTIP_STYLE = {
   backgroundColor: '#1f2937', border: '1px solid #374151',

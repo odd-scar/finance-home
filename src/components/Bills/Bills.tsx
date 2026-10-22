@@ -11,8 +11,8 @@ import { v4 as uuid } from 'uuid'
 import { Bill } from '../../types'
 import { MoneyInput } from '../ui/MoneyInput'
 import { useBatchAdd, JustAdded } from '../ui/BatchAdd'
-import { parseAmount } from '../../utils/mathExpr'
-import { formatCurrency, nextDueDate, daysUntilDueDay } from '../../utils/finance'
+import { parseAmount } from '../../lib/mathExpr'
+import { formatCurrency, nextDueDate, daysUntilDueDay } from '../../lib/finance'
 
 const TIP_KEY = 'finance-home-bills-tip-dismissed'
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { Fundamentals } from './secFacts'
+import type { Fundamentals } from '../lib/secFacts'
 
 export const FUNDAMENTALS_CACHE_KEY = 'finance-home-fundamentals-cache'
 const TTL_MS = 24 * 60 * 60 * 1000 // filings change a few times a year

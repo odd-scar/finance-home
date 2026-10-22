@@ -52,6 +52,27 @@
   }
 
   /*
+   * iPhone Safari gives date/time inputs a built-in minimum width and ignores the
+   * column they sit in, so in a two-column form they spill into the next field.
+   * Let every input shrink to its column, and draw date pickers as plain boxes.
+   */
+  input, select, textarea {
+    min-width: 0;
+    max-width: 100%;
+  }
+  input[type="date"], input[type="time"], input[type="datetime-local"], input[type="month"] {
+    -webkit-appearance: none;
+    appearance: none;
+    display: block;
+    width: 100%;
+    min-height: 2.75rem;
+    text-align: left;
+  }
+  input[type="date"]::-webkit-date-and-time-value {
+    text-align: left;
+  }
+
+  /*
    * Thumb-sized tap targets on touch screens. Icon-only buttons/links (edit, delete,
    * close, calendar…) are drawn small, which is fine for a mouse but easy to miss
    * with a finger — Apple/Google recommend ~44px. This grows only the tappable box;

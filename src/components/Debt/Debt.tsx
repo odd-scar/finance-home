@@ -1,18 +1,18 @@
 import { useState } from 'react'
 import { useAppStore } from '../../hooks/useAppStore'
-import { formatCurrency, debtAvalancheOrder, debtSnowballOrder, simulateDebtPayoff } from '../../utils/finance'
+import { formatCurrency, debtAvalancheOrder, debtSnowballOrder, simulateDebtPayoff } from '../../lib/finance'
 import { addDebt, removeDebt, updateDebt } from '../../store/store'
 import { Modal } from '../ui/Modal'
 import { Button, Input, FormField, Select } from '../ui/FormField'
 import { Badge } from '../ui/Badge'
 import { Card } from '../ui/Card'
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts'
-import { Plus, Trash2, Edit2, CreditCard, TrendingDown } from 'lucide-react'
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
+import { Plus, Trash2, Edit2, CreditCard } from 'lucide-react'
 import { v4 as uuid } from 'uuid'
 import { Debt } from '../../types'
 import { MoneyInput } from '../ui/MoneyInput'
 import { useBatchAdd, JustAdded } from '../ui/BatchAdd'
-import { parseAmount, parseNumber } from '../../utils/mathExpr'
+import { parseAmount, parseNumber } from '../../lib/mathExpr'
 
 const TOOLTIP_STYLE = {
   backgroundColor: '#1f2937',
@@ -128,7 +128,7 @@ export function DebtTracker() {
     p.paidOff ? `${p.months}mo` : 'Never (payments < interest)'
 
   // Total-debt payoff timeline for the selected strategy
-  const payoffData = activePlan.schedule.filter((s, i, arr) => i % 3 === 0 || i === arr.length - 1)
+  const payoffData = activePlan.schedule.filter((_s, i, arr) => i % 3 === 0 || i === arr.length - 1)
 
   const debtFormJsx = (adding: boolean) => (
     <div className="space-y-4" key={adding ? batch.formKey : 'edit'}>

@@ -1,16 +1,15 @@
 import { useState } from 'react'
 import { useAppStore } from '../../hooks/useAppStore'
-import { formatCurrency, daysUntil, formatDate, monthlySavingsNeeded } from '../../utils/finance'
+import { formatCurrency, daysUntil, formatDate, monthlySavingsNeeded } from '../../lib/finance'
 import { addGoal, removeGoal, updateGoal } from '../../store/store'
 import { Modal } from '../ui/Modal'
 import { Button, Input, FormField, Select } from '../ui/FormField'
-import { ProgressBar } from '../ui/ProgressBar'
 import { Badge } from '../ui/Badge'
 import { Plus, Trash2, Edit2, Target, Calendar, TrendingUp, AlertCircle, CheckCircle } from 'lucide-react'
 import { v4 as uuid } from 'uuid'
 import { FinancialGoal } from '../../types'
 import { MoneyInput } from '../ui/MoneyInput'
-import { parseAmount } from '../../utils/mathExpr'
+import { parseAmount } from '../../lib/mathExpr'
 
 const CATEGORIES = ['savings', 'debt_payoff', 'investment', 'purchase', 'other'] as const
 const PRIORITIES = ['low', 'medium', 'high'] as const
@@ -88,47 +87,63 @@ export function Goals() {
       <FormField label="Goal Name">
         <Input placeholder="Emergency Fund, New Car…" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
       </FormField>
+      {/* Two short money fields side by side; everything else gets a full row on phones */}
       <div className="grid grid-cols-2 gap-3">
-        <FormField label="Target Amount ($)">
+        <FormField label="Target ($)">
           <MoneyInput placeholder="10000" value={form.targetAmount} onChange={v => setForm(f => ({ ...f, targetAmount: v }))} />
         </FormField>
-        <FormField label="Current Amount ($)">
+        <FormField label="Saved so far ($)">
           <MoneyInput placeholder="0" value={form.currentAmount} onChange={v => setForm(f => ({ ...f, currentAmount: v }))} />
         </FormField>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <FormField label="Target Date">
-          <Input type="date" value={form.targetDate} onChange={e => setForm(f => ({ ...f, targetDate: e.target.value }))} />
+          <Input type="date" value={form.targetDate} onChange={e => setForm(f => ({ ...f, targetDate: e.target.value }))} style={{ colorScheme: 'dark' }} />
         </FormField>
         <FormField label="Category">
           <Select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value as FinancialGoal['category'] }))}>
             {CATEGORIES.map(c => <option key={c} value={c}>{catLabels[c]}</option>)}
           </Select>
         </FormField>
-        <FormField label="Priority">
-          <Select value={form.priority} onChange={e => setForm(f => ({ ...f, priority: e.target.value as FinancialGoal['priority'] }))}>
-            {PRIORITIES.map(p => <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>)}
-          </Select>
-        </FormField>
-        <FormField label="Color">
-          <div className="flex flex-wrap gap-2 mt-1">
-            {PALETTE.map(c => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => setForm(f => ({ ...f, color: c }))}
-                className={`w-6 h-6 rounded-full transition-transform ${form.color === c ? 'ring-2 ring-white scale-110' : ''}`}
-                style={{ backgroundColor: c }}
-              />
-            ))}
-          </div>
-        </FormField>
       </div>
+      <FormField label="Priority">
+        <div className="grid grid-cols-3 gap-2">
+          {PRIORITIES.map(p => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => setForm(f => ({ ...f, priority: p }))}
+              className={`py-2.5 rounded-lg text-sm font-medium border transition-colors ${
+                form.priority === p ? 'bg-brand-600/25 border-brand-500/60 text-white' : 'bg-gray-800 border-gray-700 text-gray-400'
+              }`}
+            >
+              {p.charAt(0).toUpperCase() + p.slice(1)}
+            </button>
+          ))}
+        </div>
+      </FormField>
+      <FormField label="Color">
+        <div className="flex flex-wrap gap-3">
+          {PALETTE.map(c => (
+            <button
+              key={c}
+              type="button"
+              aria-label={`Color ${c}`}
+              onClick={() => setForm(f => ({ ...f, color: c }))}
+              className={`w-9 h-9 rounded-full transition-transform ${form.color === c ? 'ring-2 ring-white ring-offset-2 ring-offset-gray-900' : ''}`}
+              style={{ backgroundColor: c }}
+            />
+          ))}
+        </div>
+      </FormField>
     </div>
   )
 
   return (
     <div className="p-4 lg:p-6 space-y-4 lg:space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <div className="grid grid-cols-3 gap-3 lg:gap-4 flex-1 mr-3 sm:mr-4">
+      {/* Totals + button: button gets its own row on phones so the totals aren't squeezed */}
+      <div className="flex flex-col-reverse sm:flex-row sm:items-center gap-3">
+        <div className="grid grid-cols-3 gap-3 lg:gap-4 flex-1">
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 sm:p-4">
             <p className="text-xs sm:text-sm text-gray-400 truncate">Total</p>
             <p className="text-xl sm:text-2xl font-bold text-white">{goals.length}</p>
@@ -142,7 +157,7 @@ export function Goals() {
             <p className="text-xl sm:text-2xl font-bold text-brand-400">{activeGoals.length}</p>
           </div>
         </div>
-        <Button onClick={() => { setForm({ ...emptyForm }); setAddOpen(true) }}><Plus size={14} /> New Goal</Button>
+        <Button onClick={() => { setForm({ ...emptyForm }); setAddOpen(true) }} className="justify-center w-full sm:w-auto"><Plus size={14} /> New Goal</Button>
       </div>
 
       {/* Active Goals grid */}

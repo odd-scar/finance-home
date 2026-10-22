@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest'
 import {
   dailyReturns, periodReturn, annualizedVolatility, maxDrawdown, sma, betaVs, analyzePortfolio,
   type PriceHistory,
-} from '../stockAnalysis'
-import { extractFundamentals, type CompanyFacts, type SecFact } from '../secFacts'
-import { analyzeBusiness } from '../businessAnalysis'
+} from '../lib/stockAnalysis'
+import { extractFundamentals, type CompanyFacts, type SecFact } from '../lib/secFacts'
+import { analyzeBusiness } from '../lib/businessAnalysis'
 
 // ── Price math ─────────────────────────────────────────────────────────────
 

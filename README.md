@@ -1,41 +1,70 @@
 # Finance Home
 
-A polished personal finance dashboard built with React, TypeScript, Vite, and Tailwind CSS.
+A personal finance app: budget, bills, savings, goals, debt, stocks, and trip planning in one place.
+It runs in the browser, installs to a phone's home screen (PWA), and syncs across devices with Supabase.
 
 ## Features
 
-- **Dashboard** — Net worth overview, savings trend, income vs expenses, goal progress
-- **Stocks** — Portfolio tracker with sparklines, trend prediction (linear regression), watchlist
-- **Debt** — Track debts, avalanche vs snowball payoff calculator, payoff timeline chart
-- **Savings** — Multiple accounts, goal tracking, compound interest growth projection
-- **Goals** — Financial goal tracking with smart monthly savings suggestions
-- **Trip Planner** — Budget trips by category, "can I afford this?" calculator, pie chart breakdown
-- **Budget** — Monthly income/expense tracking, category breakdown, 6-month trend
+- **Budget**: One screen for the month: plan vs actual by category, a quick form to log spending
+  (`12+8` works), a zero-based mode, and "Cover it" to move money between plans.
+- **Dashboard**: Net worth, cash flow, and dismissible alerts.
+- **Bills**: Recurring bills with due dates and autopay.
+- **Savings / Goals / Debt**: Accounts with history, goal tracking, and avalanche vs snowball payoff.
+- **Stocks**: Live quotes, a holdings list you can reorder, a watchlist, trend analysis, and a business analysis built from SEC filings.
+- **Trip Planner**: Trip budgets plus an optional AI assistant that suggests flights and hotels.
+- **Privacy**: Optional PIN lock. Cached data is cleared when the app is reopened or after 3 days unused.
 
-## Setup
+## Run it locally
 
 ```bash
-cd finance-home
 npm install
-npm run dev
+npm run dev        # http://localhost:5173
+npm test           # unit tests (Vitest)
+npm run build      # type-check + production build
 ```
 
-Open http://localhost:5173
+## Where things live
 
-## Tech Stack
+```
+api/                    Vercel serverless functions (run on the server, never in the browser)
+  quote.ts              live stock price (Yahoo Finance)
+  history.ts            1 year of daily prices
+  fundamentals.ts       company financials from SEC EDGAR
+  trip-assistant.ts     AI trip suggestions (Gemini or Claude via AI Gateway)
 
-- React 18 + TypeScript
-- Vite
-- Tailwind CSS
-- Recharts
-- Lucide React icons
-- date-fns
-- uuid
+src/
+  main.tsx, App.tsx     app entry, navigation, quick-add menu
+  startup.ts            runs first: automatic cache clearing
+  components/<Screen>/  one folder per screen (Budget, Bills, Stocks, …)
+  components/ui/        shared building blocks (Modal, Card, MoneyInput, …)
+  store/store.ts        all app data + every action that changes it; saves locally and syncs to Supabase
+  hooks/                React hooks (useAppStore subscribes a component to the store)
+  lib/                  pure logic with no network or storage: easy to test
+    finance.ts          money formatting, dates, payoff and growth math
+    budgetMath.ts       month totals, plan vs actual, zero-based
+    categories.ts       category lists and colors
+    mathExpr.ts         calculator for money inputs (no eval)
+    stockAnalysis.ts    trend, volatility, and return stats
+    businessAnalysis.ts / secFacts.ts   ratios from SEC filings
+  services/             anything that talks to the network or browser storage
+    supabase.ts         Supabase client (login + cloud sync)
+    quotes.ts, stockHistory.ts, fundamentals.ts, tripAssistant.ts   callers for the api/ functions
+    appCache.ts, cacheHygiene.ts        clearing caches (manual and automatic)
+    pinLock.ts, cryptoStore.ts          PIN lock and local encryption helpers
+  server/               code used only by api/ functions (trip assistant prompts and parsing)
+  types/                shared TypeScript types
+  data/                 demo data and sample stocks
+  __tests__/            unit tests
+```
 
-## Data Persistence
+## Environment variables (set in Vercel, never committed)
 
-All data is stored in `localStorage`. Demo data is pre-loaded on first launch. Use the "Reset Demo" button in the header to restore demo data at any time.
+| Name | Used for |
+| --- | --- |
+| `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | login and cloud sync |
+| `SEC_USER_AGENT` | required by the SEC, e.g. `Finance Home you@example.com` |
+| `GEMINI_API_KEY` *(free tier)* or `AI_GATEWAY_API_KEY` | trip assistant (optional) |
 
-## Stock Prices
+## Tech stack
 
-Uses simulated realistic prices with a "Refresh Prices" button that applies small random fluctuations. No API key required.
+React 18, TypeScript, Vite, Tailwind CSS, Recharts, Supabase, vite-plugin-pwa, and Vercel Functions.

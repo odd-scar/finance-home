@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { encryptData, decryptData } from '../cryptoStore'
+import { encryptData, decryptData } from '../services/cryptoStore'
 
 describe('encryptData / decryptData', () => {
   it('round-trips plaintext correctly', () => {

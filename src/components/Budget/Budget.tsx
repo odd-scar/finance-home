@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAppStore } from '../../hooks/useAppStore'
-import { formatCurrency, parseLocalDate } from '../../utils/finance'
+import { formatCurrency, parseLocalDate } from '../../lib/finance'
 import {
   addBudgetEntry, removeBudgetEntry, updateBudgetEntry,
   updateBudgetEntryThisMonth, updateBudgetEntryGoingForward,
@@ -16,10 +16,10 @@ import {
 import { v4 as uuid } from 'uuid'
 import { BudgetEntry } from '../../types'
 import { PaycheckOverridePanel } from '../PaycheckOverride/PaycheckOverridePanel'
-import { monthPlan, monthTotals, coverSource, zeroBased, SAVINGS_CATEGORY, type BillItem } from '../../utils/budgetMath'
-import { INCOME_CATS, VARIABLE_CATS, allExpenseCategories, catColor, todayISO } from '../../utils/categories'
+import { monthPlan, monthTotals, coverSource, zeroBased, SAVINGS_CATEGORY, type BillItem } from '../../lib/budgetMath'
+import { INCOME_CATS, VARIABLE_CATS, allExpenseCategories, catColor, todayISO } from '../../lib/categories'
 import { MoneyInput } from '../ui/MoneyInput'
-import { parseAmount } from '../../utils/mathExpr'
+import { parseAmount } from '../../lib/mathExpr'
 
 const LAST_CAT_KEY = 'finance-home-last-spend-category'
 

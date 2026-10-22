@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { monthTotals, expensesByCategory, billsForMonth, paycheckPlan, payPeriodDays, monthPlan, coverSource, zeroBased } from '../budgetMath'
-import { markUnlocked, isUnlocked, clearUnlocked, setSessionPin, getSessionPin } from '../auth'
-import type { Bill, BudgetEntry } from '../../types'
+import { monthTotals, expensesByCategory, billsForMonth, paycheckPlan, payPeriodDays, monthPlan, coverSource, zeroBased } from '../lib/budgetMath'
+import { markUnlocked, isUnlocked, clearUnlocked, setSessionPin, getSessionPin } from '../services/pinLock'
+import type { Bill, BudgetEntry } from '../types'
 
 const bill = (id: string, extra: Partial<Bill> = {}): Bill => ({
   id, name: 'Rent', amount: 1500, category: 'housing', dueDay: 1,

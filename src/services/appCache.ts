@@ -1,6 +1,6 @@
 import { flushSync, clearLocalDataCache } from '../store/store'
 import { HISTORY_CACHE_KEY } from './stockHistory'
-import { FUNDAMENTALS_CACHE_KEY } from './fundamentalsClient'
+import { FUNDAMENTALS_CACHE_KEY } from './fundamentals'
 
 const STOCK_CACHE_KEY = 'finance-home-stock-cache'
 

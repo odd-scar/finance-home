@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useAppStore } from '../../hooks/useAppStore'
-import { formatCurrency, calcPctChange, formatPercent, daysUntilDueDay, nextDueDate, parseLocalDate } from '../../utils/finance'
+import { formatCurrency, calcPctChange, formatPercent, daysUntilDueDay, nextDueDate, parseLocalDate } from '../../lib/finance'
 import { StatCard } from '../ui/Card'
 import { ProgressBar } from '../ui/ProgressBar'
 import { snapshotNetWorth, autoSnapshotIfNeeded, dismissAlerts, restoreAlerts } from '../../store/store'
-import { monthTotals, expensesByCategory, SAVINGS_CATEGORY } from '../../utils/budgetMath'
+import { monthTotals, expensesByCategory, SAVINGS_CATEGORY } from '../../lib/budgetMath'
 import {
   TrendingUp, CreditCard, PiggyBank, Target, Wallet,
   ArrowUpRight, ArrowDownRight, Camera, Package,

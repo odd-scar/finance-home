@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, Legend } from 'recharts'
 import { AlertTriangle, CheckCircle, Info, Loader2, ChevronDown, Building2, LineChart as LineIcon } from 'lucide-react'
-import { formatCurrency, parseLocalDate } from '../../utils/finance'
-import { useFundamentals } from '../../utils/fundamentalsClient'
-import { analyzeBusiness, fmtMoney, type Verdict } from '../../utils/businessAnalysis'
-import { analyzeStock, stockInsights, type PriceHistory, type StockMetrics, type Insight } from '../../utils/stockAnalysis'
+import { formatCurrency, parseLocalDate } from '../../lib/finance'
+import { useFundamentals } from '../../services/fundamentals'
+import { analyzeBusiness, fmtMoney, type Verdict } from '../../lib/businessAnalysis'
+import { analyzeStock, stockInsights, type PriceHistory, type StockMetrics, type Insight } from '../../lib/stockAnalysis'
 
 const TOOLTIP_STYLE = {
   backgroundColor: '#1f2937', border: '1px solid #374151',

@@ -9,7 +9,7 @@ import {
   clearSession,
   isSessionActive,
   hashPin,
-} from '../auth'
+} from '../services/pinLock'
 
 // localStorage and sessionStorage are provided by jsdom in the test environment
 

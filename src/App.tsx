@@ -15,13 +15,13 @@ import { Learn } from './components/Learn/Learn'
 import { AuthScreen, UpdatePasswordScreen } from './components/Auth/AuthScreen'
 import { Modal } from './components/ui/Modal'
 import { loadFromSupabase, setSupabaseUser, signOutCleanup, rolloverRecurringEntries } from './store/store'
-import { supabase } from './utils/supabase'
-import type { User } from './utils/supabase'
+import { supabase } from './services/supabase'
+import type { User } from './services/supabase'
 import { DollarSign, Loader2, Plus, TrendingUp, Receipt, Target, Wallet } from 'lucide-react'
-import { reloadToLatest } from './utils/appCache'
+import { reloadToLatest } from './services/appCache'
 import { WelcomeTour, ONBOARDING_KEY } from './components/Onboarding/WelcomeTour'
 import { LockScreen } from './components/Lock/LockScreen'
-import { hasPinSet, isUnlocked, markUnlocked, clearUnlocked, removePin, AUTO_LOCK_MS } from './utils/auth'
+import { hasPinSet, isUnlocked, markUnlocked, clearUnlocked, removePin, AUTO_LOCK_MS } from './services/pinLock'
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard')

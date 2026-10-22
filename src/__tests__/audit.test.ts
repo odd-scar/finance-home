@@ -8,7 +8,7 @@ const supabaseResult = vi.hoisted(() => ({
   upsert: vi.fn().mockResolvedValue({ error: null }),
 }))
 
-vi.mock('../../utils/supabase', () => ({
+vi.mock('../services/supabase', () => ({
   supabase: {
     from: () => ({
       upsert: supabaseResult.upsert,
@@ -21,14 +21,14 @@ vi.mock('../../utils/supabase', () => ({
 import {
   calcDebtPayoff, simulateDebtPayoff, monthlySavingsNeeded, projectGrowth,
   parseLocalDate, formatDate, daysUntil, nextDueDate, daysUntilDueDay,
-} from '../finance'
+} from '../lib/finance'
 import {
   state, resetToDemo, addBudgetEntry, rolloverRecurringEntries,
   loadFromSupabase, signOutCleanup, addGoal, addCustomCategory, removeCustomCategory, flushSync,
   setCategoryLimit, moveBudgetPlan, setBudgetMode, dismissAlerts, restoreAlerts,
-} from '../../store/store'
-import { clearAppCache } from '../appCache'
-import type { BudgetEntry } from '../../types'
+} from '../store/store'
+import { clearAppCache } from '../services/appCache'
+import type { BudgetEntry } from '../types'
 
 // ── debt payoff ──────────────────────────────────────────────────────────
 
