@@ -127,15 +127,26 @@ describe('reordering stocks', () => {
   })
   const order = () => state.stocks.map(s => s.id)
 
-  it('moves within holdings only', () => {
-    moveStock('c', -1)
-    expect(order()).toEqual(['a', 'c', 'b', 'w1', 'w2'])
-    moveStock('a', -1) // already first — no change
-    expect(order()).toEqual(['a', 'c', 'b', 'w1', 'w2'])
-    moveStock('b', 1)  // last holding can't jump into the watchlist
-    expect(order()).toEqual(['a', 'c', 'b', 'w1', 'w2'])
-    moveStock('w2', -1)
-    expect(order()).toEqual(['a', 'c', 'b', 'w2', 'w1'])
+  it('drops a stock into another one’s spot, shifting the rest', () => {
+    moveStock('c', 'a') // drag last to first
+    expect(order()).toEqual(['c', 'a', 'b', 'w1', 'w2'])
+    moveStock('c', 'b') // drag first to last
+    expect(order()).toEqual(['a', 'b', 'c', 'w1', 'w2'])
+    moveStock('a', 'a') // dropped where it started — no change
+    expect(order()).toEqual(['a', 'b', 'c', 'w1', 'w2'])
+    moveStock('w2', 'w1')
+    expect(order()).toEqual(['a', 'b', 'c', 'w2', 'w1'])
+  })
+
+  it('never moves a holding into the watchlist', () => {
+    moveStock('c', 'w1')
+    expect(order()).toEqual(['a', 'b', 'c', 'w1', 'w2'])
+  })
+
+  it('skips hidden 0-share holdings without losing them', () => {
+    addStock({ ...stock('z'), shares: 0 }) // stored as a holding but not shown
+    moveStock('c', 'a')
+    expect(order()).toEqual(['c', 'a', 'b', 'w1', 'w2', 'z'])
   })
 
   it('undo puts a removed stock back where it was', () => {

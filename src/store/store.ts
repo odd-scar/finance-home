@@ -340,22 +340,22 @@ export const addStock = (stock: Stock) => commit(s => ({ ...s, stocks: [...s.sto
 export const updateStock = (id: string, updates: Partial<Stock>) =>
   commit(s => ({ ...s, stocks: s.stocks.map(st => (st.id === id ? { ...st, ...updates } : st)) }))
 /**
- * Move a stock up (-1) or down (+1) within its own list — holdings and watchlist are
- * ordered separately, so a holding never jumps into the watchlist's order.
+ * Drag-and-drop: move a stock into another stock's spot, shifting the ones in between.
+ * Holdings and watchlist are ordered separately, so a holding never jumps into the
+ * watchlist's order.
  */
-export const moveStock = (id: string, direction: -1 | 1) =>
+export const moveStock = (id: string, targetId: string) =>
   commit(s => {
     const stock = s.stocks.find(st => st.id === id)
-    if (!stock) return s
+    const target = s.stocks.find(st => st.id === targetId)
+    if (!stock || !target || stock === target || !!stock.watchlist !== !!target.watchlist) return s
     const isWatch = !!stock.watchlist
-    // Positions (in the full array) of stocks in the same list, in display order
-    const positions = s.stocks.map((st, i) => (!!st.watchlist === isWatch ? i : -1)).filter(i => i >= 0)
-    const at = positions.indexOf(s.stocks.indexOf(stock))
-    const swapWith = positions[at + direction]
-    if (swapWith === undefined) return s
-    const stocks = [...s.stocks]
-    ;[stocks[positions[at]], stocks[swapWith]] = [stocks[swapWith], stocks[positions[at]]]
-    return { ...s, stocks }
+    const list = s.stocks.filter(st => !!st.watchlist === isWatch)
+    const reordered = list.filter(st => st !== stock)
+    reordered.splice(list.indexOf(target), 0, stock)
+    // Put the reordered list back into the slots that list holds in the full array
+    let i = 0
+    return { ...s, stocks: s.stocks.map(st => (!!st.watchlist === isWatch ? reordered[i++] : st)) }
   })
 /** Put a removed stock back where it was (undo) */
 export const restoreStock = (stock: Stock, index: number) =>

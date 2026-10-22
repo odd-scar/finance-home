@@ -18,10 +18,11 @@ import { LineChart, Line, ResponsiveContainer, Tooltip, PieChart, Pie, Cell } fr
 import {
   Plus, Trash2, TrendingUp, TrendingDown,
   Star, AlertTriangle, CheckCircle, Clock,
-  RefreshCw, Loader2, Edit2, Search, ShieldCheck, X, ArrowUpDown, ChevronUp, ChevronDown, Check,
+  RefreshCw, Loader2, Edit2, Search, ShieldCheck, X, ArrowUpDown,
 } from 'lucide-react'
 import { v4 as uuid } from 'uuid'
 import { Stock } from '../../types'
+import { useHoldToReorder } from '../../hooks/useHoldToReorder'
 
 const TOOLTIP_STYLE = {
   backgroundColor: '#1f2937',
@@ -117,8 +118,9 @@ export function Stocks() {
     setResearch({ symbol: sym, price })
     setResearchInput('')
   }
-  // ── Reorder + delete-with-undo ────────────────────────────────────────
-  const [reordering, setReordering] = useState(false)
+  // ── Reorder (hold + drag) + delete-with-undo ──────────────────────────
+  const holdingsOrder = useHoldToReorder(ownedStocks.map(s => s.id), moveStockInList)
+  const watchlistOrder = useHoldToReorder(watchlistStocks.map(s => s.id), moveStockInList)
   const [removed, setRemoved] = useState<{ stock: Stock; index: number } | null>(null)
   const removedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => () => { if (removedTimer.current) clearTimeout(removedTimer.current) }, [])
@@ -130,35 +132,14 @@ export function Stocks() {
     removedTimer.current = setTimeout(() => setRemoved(null), 6000)
   }
 
-  const reorderButton = (
-    <button
-      type="button"
-      onClick={() => setReordering(r => !r)}
-      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-        reordering ? 'bg-brand-600 border-brand-600 text-white' : 'border-gray-700 text-gray-400 hover:text-white'
-      }`}
-    >
-      {reordering ? <><Check size={12} /> Done</> : <><ArrowUpDown size={12} /> Reorder</>}
-    </button>
+  const reorderHint = (
+    <span className="flex items-center gap-1 text-xs text-gray-500">
+      <ArrowUpDown size={12} /> Hold to reorder
+    </span>
   )
 
-  /** Up/down arrows while reordering; otherwise edit (holdings only) and delete */
-  const rowActions = (stock: Stock, list: Stock[], canEdit = true) => {
-    const i = list.findIndex(s => s.id === stock.id)
-    if (reordering) {
-      return (
-        <div className="flex gap-1" onClick={e => e.stopPropagation()}>
-          <button type="button" disabled={i === 0} onClick={() => moveStockInList(stock.id, -1)} aria-label={`Move ${stock.symbol} up`}
-            className="p-1.5 rounded-lg text-gray-300 hover:bg-gray-700 disabled:opacity-25">
-            <ChevronUp size={16} />
-          </button>
-          <button type="button" disabled={i === list.length - 1} onClick={() => moveStockInList(stock.id, 1)} aria-label={`Move ${stock.symbol} down`}
-            className="p-1.5 rounded-lg text-gray-300 hover:bg-gray-700 disabled:opacity-25">
-            <ChevronDown size={16} />
-          </button>
-        </div>
-      )
-    }
+  /** Edit (holdings only) and delete */
+  const rowActions = (stock: Stock, canEdit = true) => {
     return (
       <div className="flex gap-1" onClick={e => e.stopPropagation()}>
         {canEdit && (
@@ -406,7 +387,7 @@ export function Stocks() {
       <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
         <div className="flex items-center px-5 py-3 border-b border-gray-800">
           <h3 className="font-semibold text-white flex-1">Portfolio Holdings</h3>
-          {ownedStocks.length > 1 && reorderButton}
+          {ownedStocks.length > 1 && reorderHint}
         </div>
 
         {/* Desktop table */}
@@ -433,6 +414,7 @@ export function Stocks() {
                 return (
                   <tr
                     key={stock.id}
+                    {...holdingsOrder.itemProps(stock.id)}
                     className="border-b border-gray-800/50 hover:bg-gray-800/40 cursor-pointer transition-colors"
                     onClick={() => setSelected(stock)}
                   >
@@ -458,7 +440,7 @@ export function Stocks() {
                     <td className="px-4 py-3">
                       <Sparkline data={sparkData(stock)} positive={allTimePct >= 0} />
                     </td>
-                    <td className="px-4 py-3">{rowActions(stock, ownedStocks)}</td>
+                    <td className="px-4 py-3">{rowActions(stock)}</td>
                   </tr>
                 )
               })}
@@ -477,6 +459,7 @@ export function Stocks() {
             return (
               <div
                 key={stock.id}
+                {...holdingsOrder.itemProps(stock.id)}
                 className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-800/40 transition-colors"
                 onClick={() => setSelected(stock)}
               >
@@ -494,7 +477,7 @@ export function Stocks() {
                   </p>
                   <p className="text-xs text-gray-500">{formatCurrency(value)}</p>
                 </div>
-                <div className="shrink-0">{rowActions(stock, ownedStocks)}</div>
+                <div className="shrink-0">{rowActions(stock)}</div>
               </div>
             )
           })}
@@ -570,19 +553,20 @@ export function Stocks() {
           <h3 className="font-semibold text-white flex items-center gap-2 flex-1">
             <Star size={16} className="text-amber-400" /> Watchlist
           </h3>
-          {watchlistStocks.length > 1 && reorderButton}
+          {watchlistStocks.length > 1 && reorderHint}
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-5">
           {watchlistStocks.map(stock => {
             const todayPct = dayChange(stock)
             return (
-              <Card key={stock.id} className="!p-4">
+              <div key={stock.id} {...watchlistOrder.itemProps(stock.id)} className="rounded-2xl">
+              <Card className="!p-4">
                 <div className="flex items-start justify-between mb-2">
                   <div>
                     <p className="font-bold text-white">{stock.symbol}</p>
                     <p className="text-xs text-gray-500">{stock.name}</p>
                   </div>
-                  {rowActions(stock, watchlistStocks, false)}
+                  {rowActions(stock, false)}
                 </div>
                 <div className="flex items-end justify-between">
                   <div>
@@ -601,6 +585,7 @@ export function Stocks() {
                   Move to Portfolio
                 </button>
               </Card>
+              </div>
             )
           })}
           {watchlistStocks.length === 0 && (
