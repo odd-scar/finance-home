@@ -209,4 +209,33 @@ describe('Gemini model selection', () => {
     expect(r.items).toHaveLength(1)
     expect(generateContent.mock.calls.map(c => c[0].model)).toEqual(['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.7-flash'])
   })
+
+  it('moves to the next model when one is out of quota, and keeps it for later', async () => {
+    vi.resetModules()
+    const fresh = await import('../../server/tripAssistant')
+    const list = vi.fn().mockResolvedValue((async function* () {
+      yield { name: 'models/gemini-3.8-flash', supportedActions: ['generateContent'] }
+      yield { name: 'models/gemini-3.7-flash', supportedActions: ['generateContent'] }
+    })())
+    const quota = Object.assign(new Error('You exceeded your current quota'), { status: 429 })
+    const generateContent = vi.fn()
+      .mockRejectedValueOnce(quota)
+      .mockResolvedValueOnce({ text: 'notes', candidates: [{ groundingMetadata: { groundingChunks: [] } }] })
+      .mockResolvedValueOnce({ text: geminiItems(-1) })
+    const ai = { models: { list, generateContent } } as unknown as GoogleGenAI
+    expect((await fresh.runGeminiAssistant(ai, req)).items).toHaveLength(1)
+    expect(generateContent.mock.calls.map(c => c[0].model)).toEqual(['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.7-flash'])
+  })
+
+  it('reports the quota error when every model is out', async () => {
+    vi.resetModules()
+    const fresh = await import('../../server/tripAssistant')
+    const list = vi.fn().mockResolvedValue((async function* () {
+      yield { name: 'models/gemini-3.8-flash', supportedActions: ['generateContent'] }
+      yield { name: 'models/gemini-3.7-flash', supportedActions: ['generateContent'] }
+    })())
+    const quota = Object.assign(new Error('You exceeded your current quota'), { status: 429 })
+    const ai = { models: { list, generateContent: vi.fn().mockRejectedValue(quota) } } as unknown as GoogleGenAI
+    await expect(fresh.runGeminiAssistant(ai, req)).rejects.toMatchObject({ status: 429 })
+  })
 })

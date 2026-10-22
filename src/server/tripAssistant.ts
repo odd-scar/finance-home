@@ -328,6 +328,11 @@ export function isModelUnavailable(err: unknown): boolean {
     (status === 400 && /model.*(not (found|supported|available))/i.test(msg))
 }
 
+/** Out of quota right now. Each model has its own free quota, so the next model may still work. */
+export function isQuotaError(err: unknown): boolean {
+  return (err as { status?: number })?.status === 429
+}
+
 export async function runGeminiAssistant(
   ai: GoogleGenAI,
   req: TripAssistantRequest,
@@ -341,9 +346,14 @@ export async function runGeminiAssistant(
       console.log('trip-assistant used', model)
       return result
     } catch (err) {
-      if (!isModelUnavailable(err)) throw err
-      console.warn('trip-assistant: model unavailable, trying next', model)
-      if (cachedGeminiModels) cachedGeminiModels = cachedGeminiModels.filter(m => m !== model)
+      if (isModelUnavailable(err)) {
+        console.warn('trip-assistant: model unavailable, trying next', model)
+        if (cachedGeminiModels) cachedGeminiModels = cachedGeminiModels.filter(m => m !== model)
+      } else if (isQuotaError(err)) {
+        console.warn('trip-assistant: quota reached, trying next', model)
+      } else {
+        throw err
+      }
       lastErr = err
     }
   }

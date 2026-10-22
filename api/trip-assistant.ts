@@ -71,7 +71,13 @@ export async function POST(request: Request): Promise<Response> {
   try {
     if (geminiKey) {
       const ai = new GoogleGenAI({ apiKey: geminiKey, httpOptions: { timeout: 100_000 } })
-      return json(await runGeminiAssistant(ai, input))
+      try {
+        return json(await runGeminiAssistant(ai, input))
+      } catch (err) {
+        // Every Gemini model is out of quota: use AI Gateway instead when it's set up
+        if (!(gatewayKey && err instanceof ApiError && err.status === 429)) throw err
+        console.warn('trip-assistant: Gemini out of quota, falling back to AI Gateway')
+      }
     }
     // Anthropic SDK pointed at Vercel AI Gateway's Anthropic-compatible endpoint
     const client = new Anthropic({ apiKey: gatewayKey, baseURL: 'https://ai-gateway.vercel.sh', timeout: 110_000, maxRetries: 1 })
@@ -87,7 +93,7 @@ export async function POST(request: Request): Promise<Response> {
         return json({ error: 'upstream', message: 'This Gemini key has no free quota for the available models. Check your plan at aistudio.google.com.' }, 502)
       }
       if (err.status === 429) {
-        return json({ error: 'busy', message: 'The free Gemini limit was reached for now — try again in a minute (or tomorrow).' }, 429)
+        return json({ error: 'busy', message: 'Google says this Gemini key is out of free quota right now (for every model tried), even if you haven’t searched today. Free limits usually reset at midnight Pacific. Check usage at ai.dev/rate-limit.' }, 429)
       }
       if ((err.status === 400 && /api key/i.test(err.message)) || err.status === 401 || err.status === 403) {
         return json({ error: 'ai_not_configured', message: 'Google rejected the GEMINI_API_KEY. Check that it was copied correctly in Vercel.' }, 503)
