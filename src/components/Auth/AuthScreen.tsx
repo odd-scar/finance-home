@@ -1,10 +1,15 @@
 import React, { useState } from 'react'
 import { supabase } from '../../services/supabase'
-import { DollarSign, Mail, Lock, Eye, EyeOff, AlertTriangle, Loader2, UserPlus, LogIn, CheckCircle2 } from 'lucide-react'
+import { DollarSign, Mail, Lock, Eye, EyeOff, AlertTriangle, Loader2, UserPlus, LogIn, CheckCircle2, ChevronLeft } from 'lucide-react'
 import { Modal } from '../ui/Modal'
 import { PrivacyAndTerms } from '../Legal/Legal'
 
-export function AuthScreen() {
+interface AuthScreenProps {
+  /** Return to the landing page. Omitted when there is nothing to go back to. */
+  onBack?: () => void
+}
+
+export function AuthScreen({ onBack }: AuthScreenProps = {}) {
   const [mode, setMode] = useState<'login' | 'signup' | 'reset'>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -84,6 +89,16 @@ export function AuthScreen() {
   return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
+
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            className="mb-4 -ml-1 flex items-center gap-1 text-sm text-gray-500 hover:text-gray-300 transition-colors"
+          >
+            <ChevronLeft size={16} /> Back
+          </button>
+        )}
 
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">

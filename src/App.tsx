@@ -13,6 +13,7 @@ import { Bills } from './components/Bills/Bills'
 import { Assets } from './components/Assets/Assets'
 import { Learn } from './components/Learn/Learn'
 import { AuthScreen, UpdatePasswordScreen } from './components/Auth/AuthScreen'
+import { Landing } from './components/Landing/Landing'
 import { Modal } from './components/ui/Modal'
 import { LogForm } from './components/Budget/LogForm'
 import { loadFromSupabase, setSupabaseUser, signOutCleanup, rolloverRecurringEntries } from './store/store'
@@ -35,6 +36,8 @@ export default function App() {
 
   // ── Auth state ───────────────────────────────────────────────────────
   const [user, setUser]             = useState<User | null>(null)
+  /** Signed out: false shows the landing page, true shows the sign-in form */
+  const [showAuth, setShowAuth]     = useState(false)
   const [authLoading, setAuthLoading]   = useState(true)
   const [dataLoading, setDataLoading]   = useState(false)
   const [passwordRecovery, setPasswordRecovery] = useState(false)
@@ -188,7 +191,13 @@ const content: Record<Tab, React.ReactNode> = {
     <UpdatePasswordScreen onDone={() => setPasswordRecovery(false)} />
   )
 
-  if (!user) return <AuthScreen />
+  // Signed out: show the landing page first so a visitor can see what this is
+  // before being asked for an email. The sign-in form is one tap away.
+  if (!user) {
+    return showAuth
+      ? <AuthScreen onBack={() => setShowAuth(false)} />
+      : <Landing onGetStarted={() => setShowAuth(true)} />
+  }
 
   if (dataLoading) return (
     <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center gap-3">
