@@ -9,6 +9,7 @@ import { useState } from 'react'
 import {
   DollarSign, Eye, TrendingUp, Compass, Wallet, Receipt, PiggyBank, Target,
   CreditCard, LineChart, Plane, Lock, WifiOff, ShieldCheck, Check, X, ArrowRight,
+  LayoutDashboard, Home, Repeat, Shield, Cloud,
 } from 'lucide-react'
 import { Modal } from '../ui/Modal'
 import { PrivacyAndTerms } from '../Legal/Legal'
@@ -55,6 +56,119 @@ const notThis = [
 
 function Section({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return <section className={`px-4 sm:px-6 ${className}`}><div className="max-w-5xl mx-auto">{children}</div></section>
+}
+
+/** Mini sidebar entries — the real nav, trimmed to fit the preview */
+const previewNav = [
+  { icon: <LayoutDashboard size={13} />, label: 'Dashboard' },
+  { icon: <PiggyBank size={13} />,       label: 'Savings' },
+  { icon: <Receipt size={13} />,         label: 'Bills', active: true },
+  { icon: <Wallet size={13} />,          label: 'Budget' },
+  { icon: <Target size={13} />,          label: 'Goals' },
+]
+
+const previewStats = [
+  { label: 'Monthly',  value: '$1,840', tone: 'text-white' },
+  { label: 'Annual',   value: '$22,080', tone: 'text-white' },
+  { label: 'Tracked',  value: '7',       tone: 'text-white' },
+  { label: 'Auto-pay', value: '5',       tone: 'text-emerald-400' },
+]
+
+const previewBills = [
+  { icon: <Home size={13} />,   tint: 'bg-brand-600/20 text-brand-300',   name: 'Rent',      tag: 'Housing',       auto: true,  amount: '$1,200', due: 'due day 1',  days: '9 days' },
+  { icon: <Repeat size={13} />, tint: 'bg-violet-600/20 text-violet-300', name: 'Streaming', tag: 'Subscriptions', auto: true,  amount: '$17.99', due: 'due day 9',  days: '17 days' },
+  { icon: <Shield size={13} />, tint: 'bg-emerald-600/20 text-emerald-300', name: 'Car insurance', tag: 'Insurance', auto: false, amount: '$118', due: 'due day 12', days: '20 days' },
+]
+
+/**
+ * A miniature of the real app, drawn in the same components and colours the app
+ * itself uses. The figures are made up — a public page is no place for anyone's
+ * actual balances — so it carries an "Example" label.
+ */
+function AppPreview() {
+  return (
+    <div className="relative">
+      <div className="absolute -inset-6 bg-brand-600/10 blur-3xl rounded-full pointer-events-none" aria-hidden="true" />
+      <div className="relative bg-gray-950 border border-gray-800 rounded-2xl overflow-hidden shadow-2xl">
+        <div className="flex">
+          {/* Mini sidebar — dropped on phones, where there is no room for it */}
+          <aside className="hidden sm:flex w-[8.5rem] shrink-0 flex-col border-r border-gray-900 p-2.5">
+            <div className="flex items-center gap-2 px-1.5 pb-3 mb-1 border-b border-gray-900">
+              <div className="w-6 h-6 bg-brand-600 rounded-lg flex items-center justify-center shrink-0">
+                <DollarSign size={13} className="text-white" />
+              </div>
+              <span className="text-[10px] font-bold leading-tight">Finance<br />Home</span>
+            </div>
+            <div className="space-y-0.5 flex-1">
+              {previewNav.map(n => (
+                <div
+                  key={n.label}
+                  className={`flex items-center gap-2 px-2 py-1.5 rounded-lg text-[11px] ${
+                    n.active ? 'bg-brand-600 text-white font-medium' : 'text-gray-500'
+                  }`}
+                >
+                  {n.icon}{n.label}
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center gap-1.5 px-1.5 pt-2 text-[9px] text-gray-600 border-t border-gray-900">
+              <Cloud size={10} /> Synced to cloud
+            </div>
+          </aside>
+
+          {/* Content */}
+          <div className="flex-1 min-w-0 p-3.5 sm:p-4">
+            <div className="flex items-start justify-between mb-3.5">
+              <div>
+                <p className="text-sm font-bold leading-tight">Bills</p>
+                <p className="text-[10px] text-gray-500">Manage recurring bills</p>
+              </div>
+              <span className="text-[9px] uppercase tracking-wider text-gray-600 border border-gray-800 rounded-full px-2 py-0.5 shrink-0">
+                Example
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 mb-3.5">
+              {previewStats.map(s => (
+                <div key={s.label} className="bg-gray-900 border border-gray-800 rounded-lg p-2.5">
+                  <p className="text-[9px] text-gray-500 mb-0.5 truncate">{s.label}</p>
+                  <p className={`text-xs font-bold tabular-nums truncate ${s.tone}`}>{s.value}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="bg-gray-900 border border-gray-800 rounded-xl divide-y divide-gray-800/70">
+              {previewBills.map(b => (
+                <div key={b.name} className="flex items-center gap-2.5 p-2.5">
+                  <span className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${b.tint}`}>
+                    {b.icon}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-medium leading-tight">{b.name}</p>
+                    <p className="text-[9px] text-gray-600 leading-tight">
+                      {b.tag}{b.auto && ' · Auto-pay'}
+                    </p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-[11px] font-semibold tabular-nums">{b.amount}</p>
+                    <p className="text-[9px] text-gray-600">{b.due}</p>
+                  </div>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 shrink-0">
+                    {b.days}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-3 flex items-center gap-1.5 text-[10px] text-gray-500">
+              <TrendingUp size={11} className="text-emerald-400 shrink-0" />
+              Savings up 4 months running
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 export function Landing({ onGetStarted }: LandingProps) {
@@ -118,51 +232,7 @@ export function Landing({ onGetStarted }: LandingProps) {
             </p>
           </div>
 
-          {/* Illustrative month view — shows the idea, not real numbers */}
-          <div className="relative">
-            <div className="absolute -inset-6 bg-brand-600/10 blur-3xl rounded-full pointer-events-none" aria-hidden="true" />
-            <div className="relative bg-gray-900 border border-gray-800 rounded-2xl p-5 sm:p-6 shadow-2xl">
-              <div className="flex items-center justify-between mb-5">
-                <p className="text-sm font-semibold text-gray-300">This month</p>
-                <span className="text-[10px] uppercase tracking-wider text-gray-600 border border-gray-800 rounded-full px-2 py-0.5">
-                  Example
-                </span>
-              </div>
-              <div className="grid grid-cols-3 gap-2.5 mb-5">
-                {[
-                  { label: 'Came in', value: '$4,200', tone: 'text-white' },
-                  { label: 'Spoken for', value: '$2,850', tone: 'text-white' },
-                  { label: 'Left', value: '$1,350', tone: 'text-emerald-400' },
-                ].map(c => (
-                  <div key={c.label} className="bg-gray-800/60 rounded-xl p-3">
-                    <p className="text-[10px] text-gray-500 mb-1">{c.label}</p>
-                    <p className={`text-sm sm:text-base font-bold tabular-nums ${c.tone}`}>{c.value}</p>
-                  </div>
-                ))}
-              </div>
-              <div className="space-y-3">
-                {[
-                  { name: 'Rent & bills', pct: 62, color: 'bg-brand-500' },
-                  { name: 'Food & going out', pct: 38, color: 'bg-emerald-500' },
-                  { name: 'Into savings', pct: 24, color: 'bg-amber-500' },
-                ].map(r => (
-                  <div key={r.name}>
-                    <div className="flex justify-between text-xs mb-1.5">
-                      <span className="text-gray-400">{r.name}</span>
-                      <span className="text-gray-500 tabular-nums">{r.pct}%</span>
-                    </div>
-                    <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
-                      <div className={`h-full ${r.color} rounded-full`} style={{ width: `${r.pct}%` }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-5 pt-4 border-t border-gray-800 flex items-center gap-2 text-xs text-gray-500">
-                <TrendingUp size={13} className="text-emerald-400 shrink-0" />
-                Savings up 4 months running
-              </div>
-            </div>
-          </div>
+          <AppPreview />
         </div>
       </Section>
 
