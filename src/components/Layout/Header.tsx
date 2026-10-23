@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { Tab } from '../../types'
-import { LogOut, Lock, RefreshCw, Loader2 } from 'lucide-react'
+import { LogOut, Lock, RefreshCw, Loader2, FileText } from 'lucide-react'
 import { clearAppCache } from '../../services/appCache'
 import { Modal } from '../ui/Modal'
 import { SecuritySettings } from '../Lock/LockScreen'
+import { PrivacyAndTerms } from '../Legal/Legal'
+import { DeleteAccount } from '../Account/DeleteAccount'
 
 const titles: Record<Tab, string> = {
   dashboard: 'Dashboard',
@@ -49,6 +51,7 @@ function getInitials(email: string): string {
 export function Header({ activeTab, userEmail, onSignOut, onLock }: HeaderProps) {
   const [accountOpen, setAccountOpen] = useState(false)
   const [securityOpen, setSecurityOpen] = useState(false)
+  const [legalOpen, setLegalOpen] = useState(false)
   const [cacheStep, setCacheStep] = useState<'idle' | 'confirm' | 'working' | 'offline'>('idle')
 
   const handleClearCache = async () => {
@@ -112,6 +115,14 @@ export function Header({ activeTab, userEmail, onSignOut, onLock }: HeaderProps)
             <Lock size={15} /> PIN Lock
           </button>
 
+          <button
+            type="button"
+            onClick={() => { setAccountOpen(false); setLegalOpen(true) }}
+            className="w-full flex items-center justify-center gap-2 py-3 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200 rounded-xl text-sm font-medium transition-colors"
+          >
+            <FileText size={15} /> Privacy & terms
+          </button>
+
           {/* Clear cache — with a confirm step so it's never hit by accident */}
           {cacheStep === 'idle' ? (
             <button
@@ -158,7 +169,15 @@ export function Header({ activeTab, userEmail, onSignOut, onLock }: HeaderProps)
           >
             <LogOut size={15} /> Sign Out
           </button>
+
+          <div className="pt-1 border-t border-gray-800">
+            <DeleteAccount onDeleted={() => { setAccountOpen(false); onSignOut?.() }} />
+          </div>
         </div>
+      </Modal>
+
+      <Modal open={legalOpen} onClose={() => setLegalOpen(false)} title="Privacy & terms">
+        <PrivacyAndTerms />
       </Modal>
 
       <Modal open={securityOpen} onClose={() => setSecurityOpen(false)} title="PIN Lock">

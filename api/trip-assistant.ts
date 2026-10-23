@@ -6,7 +6,8 @@
  * Provider, in order:
  *   1. GEMINI_API_KEY      → Google Gemini with Google Search (free tier at aistudio.google.com)
  *   2. AI_GATEWAY_API_KEY  → Claude via Vercel AI Gateway with web search
- * Signed-in users only, so nobody else can spend the AI budget. Node.js runtime;
+ * Signed-in users only, and each account gets AI_DAILY_LIMIT searches per day
+ * (default 10) so one person can't run up the AI bill. Node.js runtime;
  * maxDuration is set in vercel.json.
  */
 import Anthropic from '@anthropic-ai/sdk'
@@ -17,17 +18,59 @@ import { MAX_REQUEST_CHARS, type TripAssistantRequest } from '../src/types/tripA
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 
+const supabaseUrl = () => process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
+const supabaseAnon = () => process.env.SUPABASE_ANON_KEY ?? process.env.VITE_SUPABASE_ANON_KEY
+
+/** Assistant searches one account gets per day. Override with AI_DAILY_LIMIT in Vercel. */
+const dailyLimit = () => {
+  const n = Number(process.env.AI_DAILY_LIMIT)
+  return Number.isInteger(n) && n > 0 && n <= 500 ? n : 10
+}
+
+const bearerToken = (request: Request) =>
+  request.headers.get('authorization')?.replace(/^Bearer\s+/i, '') || null
+
 /** True when the bearer token belongs to a signed-in Supabase user */
-async function isSignedIn(request: Request): Promise<boolean> {
-  const token = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '')
-  const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
-  const anon = process.env.SUPABASE_ANON_KEY ?? process.env.VITE_SUPABASE_ANON_KEY
-  if (!token || !url || !anon) return false
+async function isSignedIn(token: string): Promise<boolean> {
+  const url = supabaseUrl()
+  const anon = supabaseAnon()
+  if (!url || !anon) return false
   try {
     const res = await fetch(`${url}/auth/v1/user`, { headers: { apikey: anon, Authorization: `Bearer ${token}` } })
     return res.ok
   } catch {
     return false
+  }
+}
+
+/**
+ * Counts this call against the account's daily allowance and returns how many are
+ * left afterwards, or -1 when the cap is already used up. The counting runs inside
+ * a SECURITY DEFINER Postgres function that reads the account from the verified
+ * JWT, so the browser can't claim a different user or reset its own counter.
+ *
+ * Fails closed: if the call can't be recorded, the AI doesn't run. Supabase has to
+ * be reachable for the sign-in check above anyway, so this costs no uptime.
+ */
+async function claimDailyCall(token: string): Promise<number> {
+  const url = supabaseUrl()
+  const anon = supabaseAnon()
+  if (!url || !anon) return -1
+  try {
+    const res = await fetch(`${url}/rest/v1/rpc/claim_ai_call`, {
+      method: 'POST',
+      headers: { apikey: anon, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ daily_limit: dailyLimit() }),
+    })
+    if (!res.ok) {
+      console.error('trip-assistant: daily cap check failed', res.status, await res.text().catch(() => ''))
+      return -1
+    }
+    const left = Number(await res.json())
+    return Number.isFinite(left) ? left : -1
+  } catch (err) {
+    console.error('trip-assistant: daily cap check unreachable', err)
+    return -1
   }
 }
 
@@ -61,8 +104,17 @@ export async function POST(request: Request): Promise<Response> {
   const geminiKey = process.env.GEMINI_API_KEY
   const gatewayKey = process.env.AI_GATEWAY_API_KEY
   if (!geminiKey && !gatewayKey) return json(NOT_CONFIGURED, 503)
-  if (!(await isSignedIn(request))) {
+  const token = bearerToken(request)
+  if (!token || !(await isSignedIn(token))) {
     return json({ error: 'unauthorized', message: 'Please sign in again.' }, 401)
+  }
+
+  // Spending guard: no single account can run up the AI bill.
+  if ((await claimDailyCall(token)) < 0) {
+    return json({
+      error: 'daily_limit',
+      message: `That’s all ${dailyLimit()} assistant searches for today. The limit resets at midnight UTC.`,
+    }, 429)
   }
 
   const input = parseBody(await request.json().catch(() => null))

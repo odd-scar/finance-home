@@ -11,6 +11,18 @@ const STORAGE_KEY = 'finance-home-data'
 // Session encryption key (PIN held in memory only — never persisted here)
 let _encKey: string | null = null
 
+/**
+ * Set when writing to this device's storage fails — almost always because the
+ * browser's quota is full. Without this the failure is invisible: the change sits
+ * in memory, looks saved, and is gone on reload. The UI reads it to show a banner.
+ */
+let _saveError: string | null = null
+
+/** Null when the last save to this device worked, otherwise a message to show */
+export function getSaveError(): string | null {
+  return _saveError
+}
+
 // ── Supabase sync ──────────────────────────────────────────────────────────
 const LAST_USER_KEY = 'finance-home-user'
 let _supabaseUserId: string | null = null
@@ -322,9 +334,14 @@ function commit(updater: (prev: AppState) => AppState) {
   const json = JSON.stringify(state)
   try {
     localStorage.setItem(STORAGE_KEY, _encKey ? encryptData(json, _encKey) : json)
+    _saveError = null
   } catch (err) {
     console.warn('localStorage save failed (quota exceeded?):', err)
-    // State is still in memory; Supabase sync will preserve data if logged in
+    // State is still in memory and Supabase sync will preserve it if signed in, but
+    // this device can't hold it — say so instead of letting the change vanish quietly.
+    _saveError = _supabaseUserId
+      ? "This device is out of storage, so changes are only being saved to the cloud. Use “Clear cache & reload” in your account menu."
+      : "This device is out of storage and your changes can't be saved. Sign in to save to the cloud, or free up space."
   }
   // Mark that this device holds changes the cloud doesn't have yet (cleared once saved).
   // Only for a loaded, signed-in account — never for an empty/failed-load state.

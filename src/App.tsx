@@ -16,6 +16,7 @@ import { AuthScreen, UpdatePasswordScreen } from './components/Auth/AuthScreen'
 import { Modal } from './components/ui/Modal'
 import { LogForm } from './components/Budget/LogForm'
 import { loadFromSupabase, setSupabaseUser, signOutCleanup, rolloverRecurringEntries } from './store/store'
+import { SaveErrorBanner } from './components/Layout/SaveErrorBanner'
 import { supabase } from './services/supabase'
 import type { User } from './services/supabase'
 import { DollarSign, Loader2, Plus, TrendingUp, Receipt, Target, Wallet } from 'lucide-react'
@@ -208,6 +209,7 @@ const content: Record<Tab, React.ReactNode> = {
 
   return (
     <div className="flex min-h-screen bg-gray-950 text-white font-sans">
+      <SaveErrorBanner />
       {updateReady && (
         <div
           className="fixed top-0 left-0 right-0 z-[300] flex items-center justify-center gap-3 px-4 py-2.5 bg-brand-600 text-white text-sm shadow-lg"

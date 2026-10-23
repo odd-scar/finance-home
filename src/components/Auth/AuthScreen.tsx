@@ -1,6 +1,8 @@
 import React, { useState } from 'react'
 import { supabase } from '../../services/supabase'
 import { DollarSign, Mail, Lock, Eye, EyeOff, AlertTriangle, Loader2, UserPlus, LogIn, CheckCircle2 } from 'lucide-react'
+import { Modal } from '../ui/Modal'
+import { PrivacyAndTerms } from '../Legal/Legal'
 
 export function AuthScreen() {
   const [mode, setMode] = useState<'login' | 'signup' | 'reset'>('login')
@@ -12,6 +14,7 @@ export function AuthScreen() {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [unconfirmedEmail, setUnconfirmedEmail] = useState('')   // set when email not yet confirmed
+  const [legalOpen, setLegalOpen] = useState(false)
 
   const clear = () => { setError(''); setMessage(''); setUnconfirmedEmail('') }
 
@@ -230,9 +233,22 @@ export function AuthScreen() {
 
         {/* Footer note */}
         <p className="text-center text-xs text-gray-700 mt-4">
-          Your financial data is stored securely · No data is ever shared
+          Your data is locked to your account · Never sold, never used for ads
+        </p>
+        <p className="text-center text-xs mt-1.5">
+          <button
+            type="button"
+            onClick={() => setLegalOpen(true)}
+            className="text-gray-600 hover:text-gray-400 underline underline-offset-2 transition-colors"
+          >
+            Privacy & terms
+          </button>
         </p>
       </div>
+
+      <Modal open={legalOpen} onClose={() => setLegalOpen(false)} title="Privacy & terms">
+        <PrivacyAndTerms />
+      </Modal>
     </div>
   )
 }
