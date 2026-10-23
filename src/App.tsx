@@ -17,6 +17,7 @@ import { Modal } from './components/ui/Modal'
 import { LogForm } from './components/Budget/LogForm'
 import { loadFromSupabase, setSupabaseUser, signOutCleanup, rolloverRecurringEntries } from './store/store'
 import { SaveErrorBanner } from './components/Layout/SaveErrorBanner'
+import { SyncConflictBanner } from './components/Layout/SyncConflictBanner'
 import { supabase } from './services/supabase'
 import type { User } from './services/supabase'
 import { DollarSign, Loader2, Plus, TrendingUp, Receipt, Target, Wallet } from 'lucide-react'
@@ -209,6 +210,7 @@ const content: Record<Tab, React.ReactNode> = {
 
   return (
     <div className="flex min-h-screen bg-gray-950 text-white font-sans">
+      <SyncConflictBanner />
       <SaveErrorBanner />
       {updateReady && (
         <div

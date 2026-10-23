@@ -6,14 +6,28 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 
 const cloud = vi.hoisted(() => ({
   current: { data: null as unknown, error: null as unknown },
-  upsert: vi.fn().mockResolvedValue({ error: null }),
+  upsert: vi.fn(),
+  update: vi.fn(),
   select: vi.fn(),
+  /** What a write returns — the new updated_at, or null when it matched no row */
+  written: (): { data: { updated_at: string } | null; error: unknown } =>
+    ({ data: { updated_at: new Date().toISOString() }, error: null }),
 }))
 
 vi.mock('../services/supabase', () => ({
   supabase: {
     from: () => ({
-      upsert: cloud.upsert,
+      // Writes now end in .select('updated_at').maybeSingle() so the store can
+      // record which cloud version it just produced.
+      upsert: (...a: unknown[]) => {
+        cloud.upsert(...a)
+        return { select: () => ({ maybeSingle: () => Promise.resolve(cloud.written()) }) }
+      },
+      // Conditional write: .update().eq(user).eq(updated_at).select().maybeSingle()
+      update: (...a: unknown[]) => {
+        cloud.update(...a)
+        return { eq: () => ({ eq: () => ({ select: () => ({ maybeSingle: () => Promise.resolve(cloud.written()) }) }) }) }
+      },
       select: (...a: unknown[]) => { cloud.select(...a); return { eq: () => ({ maybeSingle: () => Promise.resolve(cloud.current) }) } },
     }),
     auth: { getSession: vi.fn(), onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } })) },
@@ -24,6 +38,7 @@ import { monthPlan, zeroBased, SAVINGS_CATEGORY } from '../lib/budgetMath'
 import { runStartupCacheHygiene, PENDING_SYNC_KEY, STALE_AFTER_MS } from '../services/cacheHygiene'
 import {
   state, resetToDemo, addBudgetEntry, removeBudgetEntry, updateBudgetEntry, addSavings, addGoal,
+  flushSync, getSyncConflict,
   addStock, moveStock, removeStock, restoreStock, rolloverRecurringEntries, loadFromSupabase, signOutCleanup,
 } from '../store/store'
 import type { Bill, BudgetEntry, Stock } from '../types'
@@ -229,5 +244,51 @@ describe('changes made offline are uploaded on the next open, not overwritten', 
     cloud.current = { data: { state: { goals: [] } }, error: null }
     await loadFromSupabase('user-y')
     expect(cloud.select).toHaveBeenCalled()
+  })
+})
+
+// ── Two devices editing the same account ───────────────────────────────────
+
+describe('a save never erases what another device saved first', () => {
+  beforeEach(() => {
+    signOutCleanup()
+    cloud.upsert.mockClear(); cloud.update.mockClear(); cloud.select.mockClear()
+    cloud.written = () => ({ data: { updated_at: new Date().toISOString() }, error: null })
+  })
+
+  it('writes against the version it loaded, rather than blindly replacing', async () => {
+    localStorage.setItem('finance-home-user', 'user-a')
+    localStorage.setItem('finance-home-data', '{"goals":[]}')
+    cloud.current = { data: { state: { goals: [] }, updated_at: '2026-10-01T00:00:00.000Z' }, error: null }
+    await loadFromSupabase('user-a')
+
+    addGoal({ id: 'g1', name: 'Camera', targetAmount: 500, currentAmount: 0, targetDate: '2027-01-01', priority: 'low', category: 'savings', color: '#fff', addedAt: '' })
+    await flushSync()
+
+    // Conditional update, not a blind upsert
+    expect(cloud.update).toHaveBeenCalledTimes(1)
+    expect(cloud.upsert).not.toHaveBeenCalled()
+    expect(getSyncConflict()).toBe(false)
+  })
+
+  it('stops and asks instead of overwriting when the other device got there first', async () => {
+    localStorage.setItem('finance-home-user', 'user-b')
+    localStorage.setItem('finance-home-data', '{"goals":[]}')
+    cloud.current = { data: { state: { goals: [] }, updated_at: '2026-10-01T00:00:00.000Z' }, error: null }
+    await loadFromSupabase('user-b')
+
+    // Another device saves in the meantime: our conditional write matches no row,
+    // and the row that is there now carries a timestamp we never saw.
+    cloud.written = () => ({ data: null, error: null })
+    cloud.current = { data: { updated_at: '2026-10-02T00:00:00.000Z' }, error: null }
+
+    addGoal({ id: 'g2', name: 'Laptop', targetAmount: 900, currentAmount: 0, targetDate: '2027-01-01', priority: 'low', category: 'savings', color: '#fff', addedAt: '' })
+    const saved = await flushSync()
+
+    expect(saved).toBe(false)
+    expect(getSyncConflict()).toBe(true)
+    expect(cloud.upsert).not.toHaveBeenCalled()   // the other device's work is untouched
+    // The device still knows it holds changes the cloud hasn't got
+    expect(localStorage.getItem(PENDING_SYNC_KEY)).toBe('1')
   })
 })

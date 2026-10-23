@@ -36,6 +36,41 @@ let _cloudLoadedFor: string | null = null
  */
 let _syncEnabled = false
 
+/**
+ * `updated_at` of the cloud row this device last read or wrote — the version this
+ * device's edits are built on. Every push insists the cloud is still at this version.
+ * Without it the sync was last-write-wins: open the app on a phone in the morning,
+ * add a bill on a laptop at lunch, touch anything on the phone in the evening, and
+ * the phone's older copy would silently erase the bill.
+ *
+ * Kept in localStorage as well as memory, so the check still holds after a reload
+ * and still covers edits made while offline.
+ */
+const CLOUD_TS_KEY = 'finance-home-cloud-ts'
+let _cloudBase: string | null = null
+
+/** Set when a push was refused because another device wrote first */
+let _syncConflict = false
+
+function setCloudBase(ts: string | null) {
+  _cloudBase = ts
+  try {
+    if (ts) localStorage.setItem(CLOUD_TS_KEY, ts)
+    else localStorage.removeItem(CLOUD_TS_KEY)
+  } catch { /* storage unavailable */ }
+}
+
+function cloudBase(): string | null {
+  if (_cloudBase) return _cloudBase
+  try { _cloudBase = localStorage.getItem(CLOUD_TS_KEY) } catch { /* storage unavailable */ }
+  return _cloudBase
+}
+
+/** True when another device saved after this one last synced — the user has to pick a side */
+export function getSyncConflict(): boolean {
+  return _syncConflict
+}
+
 export function setSupabaseUser(userId: string | null) {
   _supabaseUserId = userId
   if (!userId) { _syncEnabled = false; _cloudLoadedFor = null }
@@ -44,14 +79,35 @@ export function setSupabaseUser(userId: string | null) {
 /** Upload the current state. Resolves true only when the cloud confirmed the save. */
 async function pushToSupabase(): Promise<boolean> {
   if (!_supabaseUserId || !_syncEnabled) return false
+  if (_syncConflict) return false   // held until the user picks a side
+  const now = new Date().toISOString()
+  const base = cloudBase()
   try {
-    const { error } = await supabase
-      .from('user_data')
-      .upsert(
-        { user_id: _supabaseUserId, state: state, updated_at: new Date().toISOString() },
-        { onConflict: 'user_id' }
-      )
-    if (error) { console.warn('Supabase sync failed:', error); return false }
+    if (base) {
+      // Write only if the cloud is still on the version this device started from.
+      // Matching on updated_at makes that check and the write one atomic step, so
+      // two devices saving at the same moment can't both think they won.
+      const { data, error } = await supabase
+        .from('user_data')
+        .update({ state: state, updated_at: now })
+        .eq('user_id', _supabaseUserId)
+        .eq('updated_at', base)
+        .select('updated_at')
+        .maybeSingle()
+      if (error) { console.warn('Supabase sync failed:', error); return false }
+      if (!data) return await handleMissedWrite()
+      setCloudBase(data.updated_at as string)
+    } else {
+      // No known base: first save of a new account, or a fresh start after the user
+      // chose a side. Nothing to protect yet, so write unconditionally.
+      const { data, error } = await supabase
+        .from('user_data')
+        .upsert({ user_id: _supabaseUserId, state: state, updated_at: now }, { onConflict: 'user_id' })
+        .select('updated_at')
+        .maybeSingle()
+      if (error) { console.warn('Supabase sync failed:', error); return false }
+      setCloudBase((data?.updated_at as string) ?? now)
+    }
     // Everything on this device is now in the cloud
     try { localStorage.removeItem(PENDING_SYNC_KEY) } catch { /* storage unavailable */ }
     return true
@@ -59,6 +115,62 @@ async function pushToSupabase(): Promise<boolean> {
     console.warn('Supabase sync failed (offline?):', err)
     return false
   }
+}
+
+/**
+ * The conditional update matched no row. Either another device saved first — a real
+ * conflict only the user can settle — or the row is gone (account deleted elsewhere),
+ * in which case recreating it is right.
+ */
+async function handleMissedWrite(): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('user_data')
+    .select('updated_at')
+    .eq('user_id', _supabaseUserId as string)
+    .maybeSingle()
+  if (error) { console.warn('Supabase sync failed:', error); return false }
+  if (!data) {
+    // Row vanished — no one's work to lose. Recreate it via the unconditional path.
+    setCloudBase(null)
+    return await pushToSupabase()
+  }
+  _syncConflict = true
+  // This device still holds changes the cloud doesn't have; keep that flag set.
+  try { localStorage.setItem(PENDING_SYNC_KEY, '1') } catch { /* storage unavailable */ }
+  listeners.forEach(fn => fn())
+  return false
+}
+
+/**
+ * Conflict resolution — take the other device's copy and drop this device's
+ * unsynced edits.
+ */
+export async function useCloudVersion(): Promise<void> {
+  const userId = _supabaseUserId
+  if (!userId) return
+  _syncConflict = false
+  _cloudLoadedFor = null          // let loadFromSupabase actually re-fetch
+  setCloudBase(null)
+  try { localStorage.removeItem(PENDING_SYNC_KEY) } catch { /* storage unavailable */ }
+  await loadFromSupabase(userId)
+  listeners.forEach(fn => fn())
+}
+
+/**
+ * Conflict resolution — keep what's on this device and overwrite the other
+ * device's save. Re-reads the cloud version first so the write is accepted.
+ */
+export async function keepThisDevice(): Promise<boolean> {
+  if (!_supabaseUserId) return false
+  const { data } = await supabase
+    .from('user_data')
+    .select('updated_at')
+    .eq('user_id', _supabaseUserId)
+    .maybeSingle()
+  setCloudBase((data?.updated_at as string) ?? null)
+  _syncConflict = false
+  listeners.forEach(fn => fn())
+  return await pushToSupabase()
 }
 
 /** Debounced — fires 2 s after the last commit to avoid hammering the API */
@@ -132,7 +244,7 @@ export async function loadFromSupabase(userId: string): Promise<void> {
     // leaves the user stuck on the "Loading your data…" screen forever.
     const fetchPromise = supabase
       .from('user_data')
-      .select('state')
+      .select('state, updated_at')
       .eq('user_id', userId)
       .maybeSingle()
 
@@ -169,6 +281,9 @@ export async function loadFromSupabase(userId: string): Promise<void> {
         budgetMode:            (cloud as AppState).budgetMode === 'zero' ? 'zero' : 'simple',
         dismissedAlerts:       Array.isArray((cloud as AppState).dismissedAlerts) ? (cloud as AppState).dismissedAlerts : [],
       }
+      // Remember which cloud version these edits build on, so a later save can tell
+      // whether another device has written since.
+      setCloudBase((data.updated_at as string) ?? null)
       // Persist locally so the app works offline after first load
       const json = JSON.stringify(state)
       try {
@@ -181,6 +296,7 @@ export async function loadFromSupabase(userId: string): Promise<void> {
       // Brand-new user (no cloud record yet) — start with an empty account,
       // NOT demo data. Push the clean state to Supabase immediately.
       state = emptyState()
+      setCloudBase(null)   // nothing in the cloud yet, so nothing to protect
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
       } catch { /* quota */ }
@@ -204,6 +320,8 @@ export function signOutCleanup() {
   _supabaseUserId = null
   _cloudLoadedFor = null
   _syncEnabled = false
+  _syncConflict = false
+  _cloudBase = null
   if (_syncTimer) { clearTimeout(_syncTimer); _syncTimer = null }
   // Wipe local storage so the next user logging in on this device
   // never briefly sees the previous user's data.
@@ -211,6 +329,7 @@ export function signOutCleanup() {
     localStorage.removeItem(STORAGE_KEY)
     localStorage.removeItem(LAST_USER_KEY)
     localStorage.removeItem(PENDING_SYNC_KEY)
+    localStorage.removeItem(CLOUD_TS_KEY)
   } catch { /* quota */ }
   state = emptyState()
   listeners.forEach(fn => fn())

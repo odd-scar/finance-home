@@ -5,13 +5,26 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 
 const supabaseResult = vi.hoisted(() => ({
   current: { data: null as unknown, error: null as unknown },
-  upsert: vi.fn().mockResolvedValue({ error: null }),
+  upsert: vi.fn(),
+  update: vi.fn(),
+  /** What a write returns — the row's new updated_at, as Supabase does */
+  written: () => ({ data: { updated_at: new Date().toISOString() }, error: null }),
 }))
 
 vi.mock('../services/supabase', () => ({
   supabase: {
     from: () => ({
-      upsert: supabaseResult.upsert,
+      // Writes end in .select('updated_at').maybeSingle() so the store can record
+      // which cloud version it just produced.
+      upsert: (...a: unknown[]) => {
+        supabaseResult.upsert(...a)
+        return { select: () => ({ maybeSingle: () => Promise.resolve(supabaseResult.written()) }) }
+      },
+      // Conditional write: .update().eq(user).eq(updated_at).select().maybeSingle()
+      update: (...a: unknown[]) => {
+        supabaseResult.update(...a)
+        return { eq: () => ({ eq: () => ({ select: () => ({ maybeSingle: () => Promise.resolve(supabaseResult.written()) }) }) }) }
+      },
       select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve(supabaseResult.current) }) }),
     }),
     auth: { getSession: vi.fn(), onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } })) },
