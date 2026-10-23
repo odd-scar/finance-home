@@ -12,6 +12,7 @@ import { Budget } from './components/Budget/Budget'
 import { Bills } from './components/Bills/Bills'
 import { Assets } from './components/Assets/Assets'
 import { Learn } from './components/Learn/Learn'
+import { Notes } from './components/Notes/Notes'
 import { AuthScreen, UpdatePasswordScreen } from './components/Auth/AuthScreen'
 import { Modal } from './components/ui/Modal'
 import { loadFromSupabase, setSupabaseUser, signOutCleanup } from './store/store'
@@ -99,6 +100,7 @@ const content: Record<Tab, React.ReactNode> = {
     bills: <Bills />,
     assets: <Assets />,
     learn: <Learn />,
+    notes: <Notes />,
   }
 
   const quickAddItems = [

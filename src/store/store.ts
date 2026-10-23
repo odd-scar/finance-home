@@ -1,4 +1,4 @@
-import { AppState, Stock, Debt, SavingsAccount, FinancialGoal, Trip, TripExpense, BudgetEntry, Bill, Asset, NetWorthSnapshot, IncomeHistory } from '../types'
+import { AppState, Stock, Debt, SavingsAccount, FinancialGoal, Trip, TripExpense, BudgetEntry, Bill, Asset, NetWorthSnapshot, IncomeHistory, Note } from '../types'
 import { v4 as uuid } from 'uuid'
 import { demoStocks, demoDebts, demoSavings, demoGoals, demoTrips, demoBudget, demoBills, demoAssets } from '../data/demo'
 import { encryptData, decryptData } from '../utils/cryptoStore'
@@ -82,6 +82,7 @@ export async function loadFromSupabase(userId: string): Promise<void> {
         recurringRolledOver:   (cloud as AppState).recurringRolledOver ?? [],
         incomeHistory:         (cloud as AppState).incomeHistory       ?? [],
         categoryLimits:        (cloud as AppState).categoryLimits      ?? {},
+        notes:                 (cloud as AppState).notes                ?? [],
       }
       // Persist locally so the app works offline after first load
       const json = JSON.stringify(state)
@@ -135,6 +136,7 @@ function defaultState(): AppState {
     recurringRolledOver: [],
     incomeHistory: [],
     categoryLimits: {},
+    notes: [],
   }
 }
 
@@ -154,6 +156,7 @@ function emptyState(): AppState {
     recurringRolledOver: [],
     incomeHistory: [],
     categoryLimits: {},
+    notes: [],
   }
 }
 
@@ -190,6 +193,7 @@ function loadState(): AppState {
       recurringRolledOver: parsed.recurringRolledOver || [],
       incomeHistory: parsed.incomeHistory || [],
       categoryLimits: parsed.categoryLimits || {},
+      notes: parsed.notes || [],
     }
   } catch {
     return defaultState()
@@ -579,4 +583,13 @@ export const resetToDemo = () =>
     recurringRolledOver: [],
     incomeHistory: [],
     categoryLimits: {},
+    notes: [],
   }))
+
+// Notes
+export const addNote = (note: Note) => commit(s => ({ ...s, notes: [note, ...s.notes] }))
+export const updateNote = (id: string, updates: Partial<Note>) =>
+  commit(s => ({ ...s, notes: s.notes.map(n => n.id === id ? { ...n, ...updates, updatedAt: new Date().toISOString() } : n) }))
+export const removeNote = (id: string) => commit(s => ({ ...s, notes: s.notes.filter(n => n.id !== id) }))
+export const togglePinNote = (id: string) =>
+  commit(s => ({ ...s, notes: s.notes.map(n => n.id === id ? { ...n, pinned: !n.pinned, updatedAt: new Date().toISOString() } : n) }))

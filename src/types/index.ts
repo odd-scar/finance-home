@@ -1,4 +1,4 @@
-export type Tab = 'dashboard' | 'stocks' | 'debt' | 'savings' | 'goals' | 'trips' | 'budget' | 'bills' | 'assets' | 'learn'
+export type Tab = 'dashboard' | 'stocks' | 'debt' | 'savings' | 'goals' | 'trips' | 'budget' | 'bills' | 'assets' | 'learn' | 'notes'
 
 export interface Stock {
   id: string
@@ -124,6 +124,17 @@ export interface NetWorthSnapshot {
   net: number
 }
 
+export interface Note {
+  id: string
+  title: string
+  body: string
+  /** Free-form tags, e.g. ticker symbols like "AAPL" or topics like "allocation" */
+  tags: string[]
+  pinned: boolean
+  addedAt: string
+  updatedAt: string
+}
+
 export interface AppState {
   stocks: Stock[]
   debts: Debt[]
@@ -139,4 +150,5 @@ export interface AppState {
   incomeHistory: IncomeHistory[]
   /** Monthly spending limits per budget category, e.g. { 'Groceries': 400 } */
   categoryLimits: Record<string, number>
+  notes: Note[]
 }

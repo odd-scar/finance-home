@@ -15,6 +15,7 @@ import {
   X,
   Cloud,
   BookOpen,
+  StickyNote,
 } from 'lucide-react'
 
 interface NavItem {
@@ -34,6 +35,7 @@ const navItems: NavItem[] = [
   { id: 'bills', label: 'Bills', icon: <Receipt size={18} /> },
   { id: 'assets', label: 'Assets', icon: <Building2 size={18} /> },
   { id: 'learn', label: 'Investor Guide', icon: <BookOpen size={18} /> },
+  { id: 'notes', label: 'Notes', icon: <StickyNote size={18} /> },
 ]
 
 // Bottom nav primary tabs (shown directly)
@@ -52,6 +54,7 @@ const bottomNavMore: NavItem[] = [
   { id: 'trips', label: 'Trip Planner', icon: <Plane size={24} /> },
   { id: 'assets', label: 'Assets', icon: <Building2 size={24} /> },
   { id: 'learn', label: 'Investor Guide', icon: <BookOpen size={24} /> },
+  { id: 'notes', label: 'Notes', icon: <StickyNote size={24} /> },
 ]
 
 interface SidebarProps {
